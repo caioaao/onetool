@@ -7,7 +7,7 @@ const MODEL: &str = "gpt-4o-mini"; // or "gemini-2.0-flash" or other model suppo
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing subscriber (controlled via RUST_LOG env var)
-    // Example: RUST_LOG=debug cargo run --example basic
+    // Example: RUST_LOG=debug cargo run --example genai-basic
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
@@ -17,20 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let genai_client = genai::Client::default();
 
-    let one_tool = genai::chat::Tool::new("repl")
-        .with_description(
-            "Run code inside a long-lived Lua REPL. Output and eval result are returned.",
-        )
-        .with_schema(json!({
-            "type": "object",
-            "properties": {
-                "source_code": {
-                    "type": "string",
-                    "description": "The source code to be executed in the Lua REPL runtie"
-                }
-            },
-            "required": ["source_code"]
-        }));
+    let one_tool = onetool::tool_definition::genai_tool();
 
     let chat_req = genai::chat::ChatRequest::new(vec![genai::chat::ChatMessage::user(
         "What's the sum of the 10 first prime numbers?",
@@ -56,10 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let first_tool_call = &tool_calls[0];
-    let source_code = match &first_tool_call.fn_arguments["source_code"] {
-        Value::String(source) => Ok(source),
-        _ => Err("Expected string but received other"),
-    }?;
+    let source_code =
+        match &first_tool_call.fn_arguments[onetool::tool_definition::PARAM_SOURCE_CODE] {
+            Value::String(source) => Ok(source),
+            _ => Err("Expected string but received other"),
+        }?;
 
     let response = repl.eval(&source_code).await?;
 
