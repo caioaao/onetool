@@ -17,19 +17,16 @@ pub fn register(lua: &mlua::Lua, doc: &LuaDoc) -> mlua::Result<()> {
         LuaDocTyp::Scope => "scope",
     };
 
-    let content = format!("({})\n{}", typ_str, doc.description);
+    let content = format!("({}) {}", typ_str, doc.description);
 
-    // Use Lua's long string syntax [[...]] to avoid escaping issues
-    let script = format!(
-        r#"
-        docs = docs or {{}}
-        docs["{}"] = [[type: {}
-description {}]]
-    "#,
-        doc.name, typ_str, content
-    );
+    // Initialize docs table if needed
+    lua.load("docs = docs or {}").exec()?;
 
-    lua.load(script).exec()
+    // Set the doc entry directly from Rust to avoid escaping issues
+    let docs: mlua::Table = lua.globals().get("docs")?;
+    docs.set(doc.name.as_str(), content)?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -53,9 +50,7 @@ mod tests {
 
         // Verify the doc was registered
         let doc_content: String = lua.load(r#"return docs["test_fn"]"#).eval().unwrap();
-        assert!(doc_content.contains("type: function"));
-        assert!(doc_content.contains("(function)"));
-        assert!(doc_content.contains("A test function"));
+        assert_eq!(doc_content, "(function) A test function");
     }
 
     #[test]
@@ -71,9 +66,7 @@ mod tests {
 
         // Verify the doc was registered with scope type
         let doc_content: String = lua.load(r#"return docs["test_scope"]"#).eval().unwrap();
-        assert!(doc_content.contains("type: scope"));
-        assert!(doc_content.contains("(scope)"));
-        assert!(doc_content.contains("A test scope"));
+        assert_eq!(doc_content, "(scope) A test scope");
     }
 
     #[test]
@@ -162,7 +155,7 @@ mod tests {
 
         // Verify the second doc overwrote the first
         let doc_content: String = lua.load(r#"return docs["overwrite_test"]"#).eval().unwrap();
-        assert!(doc_content.contains("type: scope"));
+        assert!(doc_content.contains("(scope)"));
         assert!(doc_content.contains("Second description"));
         assert!(!doc_content.contains("First description"));
     }
@@ -180,8 +173,7 @@ mod tests {
 
         let doc_content: String = lua.load(r#"return docs["format_test"]"#).eval().unwrap();
 
-        // Verify format structure: "type: <type>\ndescription (<type>)\n<description>"
-        assert!(doc_content.starts_with("type: function\n"));
-        assert!(doc_content.contains("description (function)"));
+        // Verify format structure: "(<type>) <description>"
+        assert_eq!(doc_content, "(function) Test description");
     }
 }
