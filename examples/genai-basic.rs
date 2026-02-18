@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let genai_client = genai::Client::default();
 
-    let one_tool = onetool::tool_definition::genai_tool();
+    let one_tool = onetool::genai::build_tool();
 
     let chat_req = genai::chat::ChatRequest::new(vec![genai::chat::ChatMessage::user(
         "What's the sum of the 10 first prime numbers?",

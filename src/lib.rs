@@ -40,11 +40,13 @@
 //! - [`runtime`]: Runtime creation and sandboxing
 //! - [`tool_definition`]: Tool schema for LLM integration
 
-pub mod repl;
-
 // -- Flatten
 pub use repl::Repl;
 
 // -- Public modules
+pub mod repl;
 pub mod runtime;
 pub mod tool_definition;
+
+#[cfg(feature = "genai")]
+pub mod genai;

@@ -70,14 +70,3 @@ pub fn json_schema() -> serde_json::Value {
         "required": [PARAM_SOURCE_CODE]
     })
 }
-
-/// Creates a genai::chat::Tool instance for the REPL.
-///
-/// This is a convenience function for users of the `genai` crate.
-/// Requires the `genai` feature to be enabled.
-#[cfg(feature = "genai")]
-pub fn genai_tool() -> genai::chat::Tool {
-    genai::chat::Tool::new(NAME)
-        .with_description(DESCRIPTION)
-        .with_schema(json_schema())
-}
