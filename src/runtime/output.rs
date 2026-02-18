@@ -2,22 +2,17 @@ use std::sync::mpsc;
 
 pub fn capture_output(lua: &mlua::Lua) -> mlua::Result<mpsc::Receiver<String>> {
     let (tx, rx) = mpsc::channel::<String>();
+    let lua_tostring: mlua::Function = lua.globals().get("tostring")?;
 
-    let print_fn = lua.create_function(move |lua, args: mlua::Variadic<mlua::Value>| {
-        let line = args
+    let print_fn = lua.create_function(move |_lua, args: mlua::MultiValue| {
+        let mut line = args
             .iter()
-            .map(|v| {
-                lua.coerce_string(v.clone())
-                    .ok()
-                    .flatten()
-                    .map(|s| s.to_string_lossy())
-                    .unwrap_or_else(|| "nil".to_string())
-            })
-            .collect::<Vec<_>>()
+            .map(|v| lua_tostring.call::<String>(v))
+            .collect::<Result<Vec<_>, _>>()?
             .join("\t");
+        line.push('\n');
 
-        tx.send(format!("{}\n", line))
-            .expect("Failed to send output");
+        tx.send(line).expect("Failed to send output");
 
         Ok(())
     })?;
@@ -172,5 +167,16 @@ mod tests {
         lua.load(r#"print()"#).exec().unwrap();
 
         assert_eq!(collect_output(rx), "\n");
+    }
+
+    #[test]
+    fn test_capture_output_handles_tables() {
+        let lua = mlua::Lua::new();
+
+        let rx = capture_output(&lua).unwrap();
+
+        lua.load(r#"print({x = 1})"#).exec().unwrap();
+        let output = collect_output(rx);
+        assert!(output.starts_with("table: 0x"));
     }
 }
