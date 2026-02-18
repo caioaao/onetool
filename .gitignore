@@ -1,0 +1,7 @@
+/target
+
+# Nix
+result
+result-*
+.direnv/
+.envrc.local

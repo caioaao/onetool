@@ -1,0 +1,16 @@
+[package]
+name = "onetool"
+version = "0.0.1-alpha"
+edition = "2024"
+license = "MIT"
+description = "The last LLM tool you'll every need"
+
+[dependencies]
+mlua = { version = "0.11.5", features = ["lua54", "async", "vendored"] }
+tracing = "0.1"
+
+[dev-dependencies]
+genai = "0.5.3"
+tokio = { version = "1", features = ["rt", "macros"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rustyline = "14.0"
