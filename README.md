@@ -307,7 +307,6 @@ For implementation details, see:
 
 **Contributing:**
 - Early stage project - feedback welcome!
-- See [`CLAUDE.md`](CLAUDE.md) for architecture details
 - Issues and PRs appreciated
 
 ---
