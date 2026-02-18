@@ -1,12 +1,11 @@
 //! Runs a Lua repl
 //! This simulates what an LLM would see when interacting with the runtime
 
-use onetool::repl;
 use rustyline::DefaultEditor;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let repl = repl::Repl::new().expect("Failed to initialize REPL");
+    let repl = onetool::Repl::new().expect("Failed to initialize REPL");
     let mut editor = DefaultEditor::new().expect("Failed to create editor");
 
     println!("Lua REPL");
