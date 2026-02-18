@@ -1,5 +1,62 @@
+//! Lua runtime sandboxing.
+//!
+//! This module implements security restrictions by setting dangerous Lua globals to `nil`.
+//! Attempts to use blocked features will fail with "attempt to call a nil value" errors.
+//!
+//! # Blocked Features
+//!
+//! - **File I/O**: `io`, `file`
+//! - **Code loading**: `require`, `dofile`, `load`, `loadfile`, `loadstring`, `package`
+//! - **OS commands**: `os.execute`, `os.getenv`, `os.remove`, `os.rename`, etc.
+//! - **Metatable manipulation**: `getmetatable`, `setmetatable`, `rawset`, `rawget`, `rawequal`, `rawlen`
+//! - **Memory control**: `collectgarbage`
+//! - **Coroutines**: `coroutine`
+//!
+//! # Allowed Features
+//!
+//! - **String manipulation**: `string.*`
+//! - **Table operations**: `table.*`
+//! - **Math functions**: `math.*`
+//! - **UTF-8 support**: `utf8.*`
+//! - **Safe OS functions**: `os.time`, `os.date`
+//! - **Basic operations**: `print`, `type`, `tostring`, `tonumber`, `ipairs`, `pairs`, `next`, `select`, `assert`, `error`, `pcall`, `xpcall`
+//!
+//! # Example
+//!
+//! ```
+//! use onetool::runtime::sandbox;
+//!
+//! # fn example() -> mlua::Result<()> {
+//! let lua = mlua::Lua::new();
+//! sandbox::apply(&lua)?;
+//!
+//! // This will fail
+//! let result = lua.load("io.open('test.txt')").exec();
+//! assert!(result.is_err());
+//! # Ok(())
+//! # }
+//! ```
+
 use crate::runtime::docs::{self, LuaDoc, LuaDocTyp};
 
+/// Applies sandboxing to an existing Lua runtime.
+///
+/// This is a destructive operation that removes dangerous globals. Typically you should
+/// use [`crate::runtime::default()`] instead, but this function is useful when you need
+/// to configure custom globals before sandboxing.
+///
+/// # Example
+///
+/// ```
+/// use onetool::runtime::sandbox;
+///
+/// # fn example() -> mlua::Result<()> {
+/// let lua = mlua::Lua::new();
+/// lua.globals().set("custom_value", 42)?;
+/// sandbox::apply(&lua)?;
+/// # Ok(())
+/// # }
+/// ```
 pub fn apply(lua: &mlua::Lua) -> mlua::Result<()> {
     // First, preserve safe os functions before blocking
     sandbox_os_module(lua)?;

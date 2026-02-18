@@ -1,5 +1,41 @@
+//! Output capture for Lua `print()` calls.
+//!
+//! This module intercepts Lua's global `print()` function to capture output separately
+//! from expression return values. This allows distinguishing between debug output
+//! (from `print()`) and actual evaluation results.
+//!
+//! # Output Format
+//!
+//! Each `print()` call produces one string with:
+//! - Arguments separated by tabs
+//! - A trailing newline
+//!
+//! For example, `print("a", "b", "c")` produces `"a\tb\tc\n"`.
+
 use std::sync::mpsc;
 
+/// Intercepts `print()` calls and returns a channel receiver for captured output.
+///
+/// Replaces the global `print()` function with a version that sends output to a channel
+/// instead of stdout. Arguments are converted to strings, joined with tabs, and have a
+/// newline appended.
+///
+/// # Example
+///
+/// ```
+/// use onetool::runtime::output;
+///
+/// # fn example() -> mlua::Result<()> {
+/// let lua = mlua::Lua::new();
+/// let rx = output::capture_output(&lua)?;
+///
+/// lua.load(r#"print("hello", "world")"#).exec()?;
+///
+/// let output: Vec<String> = rx.try_iter().collect();
+/// assert_eq!(output, vec!["hello\tworld\n"]);
+/// # Ok(())
+/// # }
+/// ```
 pub fn capture_output(lua: &mlua::Lua) -> mlua::Result<mpsc::Receiver<String>> {
     let (tx, rx) = mpsc::channel::<String>();
     let lua_tostring: mlua::Function = lua.globals().get("tostring")?;

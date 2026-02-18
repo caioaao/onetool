@@ -1,16 +1,79 @@
+//! Runtime documentation system.
+//!
+//! This module provides a way to register documentation metadata about Lua functions
+//! and scopes into a global `docs` table that Lua code can query at runtime.
+//!
+//! Documentation entries are formatted as `"(<type>) <description>"` and stored in
+//! the `docs` global table indexed by name.
+//!
+//! # Example
+//!
+//! ```
+//! use onetool::runtime::docs::{register, LuaDoc, LuaDocTyp};
+//!
+//! # fn example() -> mlua::Result<()> {
+//! let lua = mlua::Lua::new();
+//!
+//! register(&lua, &LuaDoc {
+//!     name: "my_fn".to_string(),
+//!     typ: LuaDocTyp::Function,
+//!     description: "Does something useful".to_string(),
+//! })?;
+//!
+//! // Now accessible from Lua
+//! let doc: String = lua.load(r#"return docs["my_fn"]"#).eval()?;
+//! assert_eq!(doc, "(function) Does something useful");
+//! # Ok(())
+//! # }
+//! ```
+
+/// Documentation entry type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LuaDocTyp {
+    /// A callable function.
     Function,
+    /// A namespace or module containing functions.
     Scope,
 }
 
+/// Documentation entry for a Lua function or scope.
 #[derive(Debug, Clone)]
 pub struct LuaDoc {
+    /// Fully qualified name (e.g., "os.time" or "string").
     pub name: String,
+    /// Type of the documented item.
     pub typ: LuaDocTyp,
+    /// Human-readable description.
     pub description: String,
 }
 
+/// Registers documentation into the Lua `docs` global table.
+///
+/// Creates or updates the `docs` table with an entry for the given name. The entry
+/// is formatted as `"(<type>) <description>"`.
+///
+/// # Example
+///
+/// ```
+/// use onetool::runtime::docs::{register, LuaDoc, LuaDocTyp};
+///
+/// # fn example() -> mlua::Result<()> {
+/// let lua = mlua::Lua::new();
+///
+/// register(&lua, &LuaDoc {
+///     name: "math".to_string(),
+///     typ: LuaDocTyp::Scope,
+///     description: "Mathematical functions".to_string(),
+/// })?;
+///
+/// register(&lua, &LuaDoc {
+///     name: "math.sqrt".to_string(),
+///     typ: LuaDocTyp::Function,
+///     description: "Returns the square root of a number".to_string(),
+/// })?;
+/// # Ok(())
+/// # }
+/// ```
 pub fn register(lua: &mlua::Lua, doc: &LuaDoc) -> mlua::Result<()> {
     let typ_str = match doc.typ {
         LuaDocTyp::Function => "function",

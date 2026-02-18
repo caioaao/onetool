@@ -1,21 +1,87 @@
 use crate::runtime;
 use std::sync::mpsc;
 
+/// Main interface for evaluating Lua code in a sandboxed environment.
+///
+/// `Repl` manages a Lua runtime and captures output from `print()` calls separately
+/// from expression return values. State (variables, functions) persists between
+/// evaluations.
+///
+/// # Example
+///
+/// ```no_run
+/// use onetool::Repl;
+///
+/// # async fn example() -> Result<(), mlua::Error> {
+/// let repl = Repl::new()?;
+///
+/// // State persists across evaluations
+/// repl.eval("x = 42").await?;
+/// let outcome = repl.eval("return x * 2").await?;
+///
+/// assert_eq!(outcome.result.unwrap()[0], "84");
+/// # Ok(())
+/// # }
+/// ```
 pub struct Repl {
     runtime: mlua::Lua,
     output_receiver: mpsc::Receiver<String>,
 }
 
+/// Result of evaluating Lua code.
+///
+/// Contains both the return values (or error) from the evaluation and any output
+/// captured from `print()` calls during execution.
 pub struct EvalOutcome {
+    /// Evaluation result: `Ok(values)` for successful execution with formatted return
+    /// values, or `Err(message)` for runtime/syntax/callback errors.
     pub result: Result<Vec<String>, String>,
+    /// Lines captured from `print()` calls during execution. Each element includes
+    /// a trailing newline.
     pub output: Vec<String>,
 }
 
 impl Repl {
+    /// Creates a new sandboxed Lua REPL.
+    ///
+    /// The runtime has dangerous operations blocked (file I/O, code loading, OS commands)
+    /// while preserving safe Lua standard library functions.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use onetool::Repl;
+    ///
+    /// # async fn example() -> Result<(), mlua::Error> {
+    /// let repl = Repl::new()?;
+    /// let outcome = repl.eval("return math.sqrt(16)").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new() -> Result<Self, mlua::Error> {
         Self::new_with(runtime::default()?)
     }
 
+    /// Creates a REPL with a custom Lua runtime.
+    ///
+    /// Useful when you need to register custom globals or functions before sandboxing.
+    /// Note that sandboxing is NOT automatically applied to the provided runtime.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use onetool::{Repl, runtime};
+    ///
+    /// # async fn example() -> Result<(), mlua::Error> {
+    /// let lua = mlua::Lua::new();
+    /// lua.globals().set("custom_value", 42)?;
+    /// runtime::sandbox::apply(&lua)?;  // Apply sandboxing manually
+    ///
+    /// let repl = Repl::new_with(lua)?;
+    /// let outcome = repl.eval("return custom_value").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new_with(runtime: mlua::Lua) -> Result<Self, mlua::Error> {
         let output_receiver = runtime::output::capture_output(&runtime)?;
 
@@ -25,6 +91,29 @@ impl Repl {
         })
     }
 
+    /// Evaluates Lua code and captures output.
+    ///
+    /// Returns both the expression return values and any output from `print()` calls.
+    /// State persists between calls, so variables and functions remain available.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use onetool::Repl;
+    ///
+    /// # async fn example() -> Result<(), mlua::Error> {
+    /// let repl = Repl::new()?;
+    ///
+    /// let outcome = repl.eval(r#"
+    ///     print("debug message")
+    ///     return 1, 2, 3
+    /// "#).await?;
+    ///
+    /// assert_eq!(outcome.output, vec!["debug message\n"]);
+    /// assert_eq!(outcome.result.unwrap(), vec!["1", "2", "3"]);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn eval(&self, code: &str) -> Result<EvalOutcome, mlua::Error> {
         let result = match self.runtime.load(code).eval::<mlua::MultiValue>() {
             Ok(values) => Ok(values
