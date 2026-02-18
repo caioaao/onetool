@@ -14,3 +14,4 @@ genai = "0.5.3"
 tokio = { version = "1", features = ["rt", "macros"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rustyline = "14.0"
+serde_json = "1.0.149"
