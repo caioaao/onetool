@@ -18,50 +18,53 @@ Each tool requires API design, documentation, and testing. Tools don't compose w
 
 Instead of hunting for the right tool, your LLM can solve problems programmatically. State persists between calls for multi-step reasoning. It's safe by design with comprehensive sandboxing. And it integrates seamlessly with major LLM libraries.
 
+## Framework Support
+
+onetool provides adapters for popular Rust LLM frameworks:
+
+- **[genai](https://github.com/jeremychone/rust-genai)** - Multi-provider LLM client (OpenAI, Google, Anthropic)
+- **[mistral.rs](https://github.com/EricLBuehler/mistral.rs)** - Fast local model inference
+- **[rig](https://github.com/0xPlaygrounds/rig)** - Modular LLM application framework
+- **[aisdk](https://github.com/lazy-hq/aisdk)** - Rust port of Vercel's AI SDK
+
+See [Framework Integration](#framework-integration) for usage details.
+
 ## Quick Start: LLM Integration
+
+### Core REPL Usage
 
 ```rust
 use onetool::Repl;
-use genai::chat::{ChatRequest, ChatMessage, ToolResponse};
-use serde_json::json;
 
-// 1. Create the REPL
+// Create the sandboxed Lua runtime
 let repl = Repl::new()?;
 
-// 2. Get the tool definition (compatible with OpenAI, Google, etc.)
-let tool = onetool::tool_definition::genai_tool();
+// Execute Lua code
+let response = repl.eval("return 2 + 2")?;
 
-// 3. Add to your chat request
-let chat_req = ChatRequest::new(vec![
-    ChatMessage::user("What's the sum of the 10 first prime numbers?")
-]).with_tools(vec![tool]);
-
-// 4. Get LLM response with tool calls
-let chat_res = client.exec_chat(MODEL, chat_req.clone(), None).await?;
-let tool_calls = chat_res.into_tool_calls();
-
-// 5. Execute the code
-let source_code = &tool_calls[0].fn_arguments["source_code"];
-let response = repl.eval(source_code)?;
-
-// 6. Send results back to LLM
-let tool_response = ToolResponse::new(
-    tool_calls[0].call_id.clone(),
-    json!({
-        "output": response.output.join("\n"),
-        "result": match response.result {
-            Ok(result) => result.join("\n"),
-            Err(err) => format!("error: {}", err),
-        }
-    }).to_string()
-);
-
-// 7. Get final answer
-let chat_req = chat_req
-    .append_message(tool_calls)
-    .append_message(tool_response);
-let final_response = client.exec_chat(MODEL, chat_req, None).await?;
+// Access results
+println!("Result: {}", response.result.unwrap().join("\n")); // "4"
+println!("Output: {}", response.output.join("\n"));          // (print() output)
 ```
+
+The REPL maintains state between calls, so variables and functions persist:
+
+```rust
+repl.eval("x = 10")?;
+repl.eval("y = 20")?;
+let result = repl.eval("return x + y")?; // "30"
+```
+
+### LLM Framework Integration
+
+onetool provides ready-to-use adapters for popular LLM frameworks:
+
+- **[genai](#genai-adapter)** - `LuaRepl::new(&repl)` with `definition()` and `call()` methods
+- **[mistralrs](#mistralrs-adapter)** - `LuaRepl::new(&repl)` with `definition()` and `call()` methods
+- **[rig](#rig-adapter)** - Implements `Tool` trait (requires `set_repl()` first)
+- **[aisdk](#aisdk-adapter)** - Uses `#[tool]` macro (requires `set_repl()` first)
+
+Each adapter handles tool definition registration and execution for its framework. See [Framework Integration](#framework-integration) for detailed usage.
 
 ## Real Example: What Can It Do?
 
@@ -107,9 +110,139 @@ LLM: "The sum of the first 10 prime numbers is 129."
 
 The LLM wrote a complete algorithm, executed it safely, and got the answer - all without needing a specialized "prime number calculator" tool.
 
+## Framework Integration
+
+### genai Adapter
+
+**Feature flag:** `genai`
+
+The genai adapter provides seamless integration with the [genai](https://github.com/jeremychone/rust-genai) multi-provider LLM client.
+
+**Key Methods:**
+- `LuaRepl::new(&repl)` - Creates the adapter
+- `.definition()` - Returns `genai::chat::Tool` for registration
+- `.call(&tool_call)` - Executes tool call and returns `ToolResponse`
+
+**Example:**
+
+```rust
+use onetool::{Repl, genai::LuaRepl};
+
+let repl = Repl::new()?;
+let lua_repl = LuaRepl::new(&repl);
+
+// Register with genai client
+let chat_req = genai::chat::ChatRequest::new(messages)
+    .with_tools(vec![lua_repl.definition()]);
+
+// Execute tool calls
+let tool_response = lua_repl.call(&tool_calls[0]);
+```
+
+**Full example:** [`examples/genai-basic.rs`](examples/genai-basic.rs)
+
+---
+
+### mistralrs Adapter
+
+**Feature flag:** `mistralrs`
+
+The mistralrs adapter integrates with [mistral.rs](https://github.com/EricLBuehler/mistral.rs) for fast local model inference.
+
+**Key Methods:**
+- `LuaRepl::new(&repl)` - Creates the adapter
+- `.definition()` - Returns `mistralrs::Tool` for registration
+- `.call(&tool_call)` - Executes tool call and returns result string
+
+**Example:**
+
+```rust
+use onetool::{Repl, mistralrs::LuaRepl};
+
+let repl = Repl::new()?;
+let lua_repl = LuaRepl::new(&repl);
+
+// Register with mistralrs model
+let messages = RequestBuilder::new()
+    .add_message(TextMessageRole::User, "Calculate something")
+    .set_tools(vec![lua_repl.definition()]);
+
+// Execute tool calls
+let result = lua_repl.call(&tool_calls[0]);
+```
+
+**Full example:** [`examples/mistralrs-basic.rs`](examples/mistralrs-basic.rs)
+
+---
+
+### rig Adapter
+
+**Feature flag:** `rig`
+
+The rig adapter implements the `Tool` trait from [rig-core](https://github.com/0xPlaygrounds/rig).
+
+**Important:** You must call `onetool::rig::set_repl()` before creating the tool, as rig requires tools to be `Sync`.
+
+**Key Methods:**
+- `onetool::rig::set_repl(repl)` - Initialize global REPL (call once)
+- `LuaRepl::new()` - Creates the tool (implements `Tool` trait)
+
+**Example:**
+
+```rust
+use onetool::{Repl, rig::{set_repl, LuaRepl}};
+
+let repl = Repl::new()?;
+set_repl(repl);  // Must be called first!
+
+let lua_tool = LuaRepl::new();
+
+// Use with rig agents
+let agent = client
+    .agent(model)
+    .tool(lua_tool)
+    .build();
+```
+
+**Full example:** [`examples/rig-basic.rs`](examples/rig-basic.rs)
+
+---
+
+### aisdk Adapter
+
+**Feature flag:** `aisdk`
+
+The aisdk adapter uses the `#[tool]` macro from [aisdk](https://github.com/lazy-hq/aisdk).
+
+**Important:** You must call `onetool::aisdk::set_repl()` before using the tool, as the macro generates a function-based tool.
+
+**Key Functions:**
+- `onetool::aisdk::set_repl(repl)` - Initialize global REPL (call once)
+- `onetool::aisdk::lua_repl()` - Returns the tool function
+
+**Example:**
+
+```rust
+use onetool::{Repl, aisdk};
+
+let repl = Repl::new()?;
+aisdk::set_repl(repl);  // Must be called first!
+
+// Use with aisdk
+let result = LanguageModelRequest::builder()
+    .model(OpenAI::gpt_4o())
+    .prompt("Calculate something")
+    .with_tool(aisdk::lua_repl())
+    .build()
+    .generate_text()
+    .await?;
+```
+
+**Full example:** [`examples/aisdk-basic.rs`](examples/aisdk-basic.rs)
+
 ## Tool Definition System
 
-onetool includes a complete tool definition system for LLM integration:
+onetool includes a complete tool definition system that works with any LLM framework:
 
 ```rust
 use onetool::tool_definition;
@@ -119,11 +252,18 @@ tool_definition::NAME              // "lua_repl"
 tool_definition::DESCRIPTION       // Full description for LLM context
 tool_definition::PARAM_SOURCE_CODE // "source_code"
 
-// JSON Schema (for OpenAI, Google, Anthropic)
+// JSON Schema (framework-agnostic)
 let schema = tool_definition::json_schema();
+```
 
-// genai integration (requires "genai" feature)
+**Framework-specific helpers:**
+
+```rust
+// genai (requires "genai" feature)
 let tool = tool_definition::genai_tool();
+
+// For mistralrs, rig, aisdk: use the adapter's .definition() method
+// See Framework Integration section above
 ```
 
 **Compatible with:**
@@ -166,7 +306,7 @@ let tool = tool_definition::genai_tool();
 - Comprehensive documentation in tool description
 
 **For Developers:**
-- Drop-in integration with genai library
+- Drop-in integration with genai, mistralrs, rig, and aisdk libraries
 - Separate `print()` output from return values
 - Clear error messages
 - Type-safe Rust API via mlua
@@ -179,66 +319,94 @@ let tool = tool_definition::genai_tool();
 
 ## Installation
 
-**Basic setup:**
+**Basic REPL only** (no LLM framework):
 ```toml
 [dependencies]
 onetool = "0.0.1-alpha.3"
-tokio = { version = "1", features = ["full"] }
 ```
 
-**With genai integration:**
+**With genai:**
 ```toml
 [dependencies]
 onetool = { version = "0.0.1-alpha.3", features = ["genai"] }
 genai = "0.5"
 ```
 
-**With JSON Schema only:**
+**With mistralrs:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.3", features = ["json_schema"] }
+onetool = { version = "0.0.1-alpha.3", features = ["mistralrs"] }
+mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git" }
 ```
+
+**With rig:**
+```toml
+[dependencies]
+onetool = { version = "0.0.1-alpha.3", features = ["rig"] }
+rig-core = "0.3"
+```
+
+**With aisdk:**
+```toml
+[dependencies]
+onetool = { version = "0.0.1-alpha.3", features = ["aisdk"] }
+aisdk = "0.2"
+```
+
+**Feature flags:**
+
+| Feature | Includes | Description |
+|---------|----------|-------------|
+| `genai` | `json_schema` | genai adapter + tool definition |
+| `mistralrs` | `json_schema` | mistralrs adapter + tool definition |
+| `rig` | `json_schema` | rig-core Tool implementation |
+| `aisdk` | `json_schema` | aisdk #[tool] macro integration |
+| `json_schema` | - | JSON Schema generation (included by all above) |
 
 **Note:** Currently in alpha - API may change.
 
-## Complete Example
+## Running the Examples
 
-**Run the full LLM integration example:**
+All examples solve the same problem (sum of first 10 primes = 129) to demonstrate consistent behavior across frameworks.
+
+### LLM Framework Examples
+
+**genai** (multi-provider client):
 ```bash
-# Set your API key (OpenAI, Google, etc.)
-export OPENAI_API_KEY=your_key_here
-
-# Run the example
+export OPENAI_API_KEY=your_key_here  # or GEMINI_API_KEY, etc.
 cargo run --features genai --example genai-basic
 ```
+Source: [`examples/genai-basic.rs`](examples/genai-basic.rs)
 
-This demonstrates:
-- Creating the sandboxed REPL
-- Registering the tool with an LLM client
-- LLM generating Lua code to solve a problem
-- Executing the code safely
-- Returning results to the LLM
-- LLM synthesizing the final answer
+**mistralrs** (local inference):
+```bash
+cargo run --features mistralrs --example mistralrs-basic
+```
+Downloads and runs Phi-3.5-mini locally. No API key required.
+Source: [`examples/mistralrs-basic.rs`](examples/mistralrs-basic.rs)
 
-**See it in action:**
+**rig** (modular framework):
+```bash
+export OPENAI_API_KEY=your_key_here
+cargo run --features rig --example rig-basic
+```
+Source: [`examples/rig-basic.rs`](examples/rig-basic.rs)
 
-The example asks the LLM to calculate the sum of the first 10 prime numbers. The LLM:
-1. Writes Lua code to find primes
-2. Writes code to sum them
-3. Executes via onetool
-4. Receives the answer (129)
-5. Responds to the user
+**aisdk** (Vercel AI SDK port):
+```bash
+export OPENAI_API_KEY=your_key_here
+cargo run --features aisdk --example aisdk-basic
+```
+Source: [`examples/aisdk-basic.rs`](examples/aisdk-basic.rs)
 
-See the full example source: [`examples/genai-basic.rs`](examples/genai-basic.rs)
+### Interactive REPL
 
-## Other Examples
-
-**Interactive REPL (for testing):**
+Test the sandboxed environment directly:
 ```bash
 cargo run --example lua-repl
 ```
 
-This lets you interact with the sandboxed environment directly to test Lua code and understand what the LLM sees.
+This lets you experiment with Lua code and understand what the LLM sees. No API key required.
 
 ## API Overview
 
@@ -282,8 +450,14 @@ nix develop  # Dev shell with Rust, cargo-watch, rust-analyzer
 
 **Running Examples:**
 ```bash
-cargo run --features genai --example genai-basic  # Full LLM integration
-cargo run --example lua-repl     # Interactive testing
+# Framework examples (requires API keys for genai, rig, aisdk)
+cargo run --features genai --example genai-basic
+cargo run --features mistralrs --example mistralrs-basic
+cargo run --features rig --example rig-basic
+cargo run --features aisdk --example aisdk-basic
+
+# Interactive REPL
+cargo run --example lua-repl
 ```
 
 ## Architecture
@@ -310,4 +484,4 @@ For implementation details, see:
 
 ---
 
-Built with [mlua](https://github.com/mlua-rs/mlua) and [genai](https://github.com/jeremychone/rust-genai).
+Built with [mlua](https://github.com/mlua-rs/mlua).
