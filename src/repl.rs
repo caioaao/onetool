@@ -1,11 +1,45 @@
 use crate::runtime;
 use std::sync::{Mutex, mpsc};
 
+/// Errors that can occur during REPL operations.
+#[derive(Debug)]
+pub enum ReplError {
+    /// Error from the Lua runtime
+    Lua(mlua::Error),
+    /// The runtime lock was poisoned (panic in another thread while holding lock)
+    LockPoisoned,
+}
+
+impl std::fmt::Display for ReplError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReplError::Lua(e) => write!(f, "Lua error: {}", e),
+            ReplError::LockPoisoned => write!(f, "Runtime lock poisoned"),
+        }
+    }
+}
+
+impl std::error::Error for ReplError {}
+
+impl From<mlua::Error> for ReplError {
+    fn from(err: mlua::Error) -> Self {
+        ReplError::Lua(err)
+    }
+}
+
 /// Main interface for evaluating Lua code in a sandboxed environment.
 ///
 /// `Repl` manages a Lua runtime and captures output from `print()` calls separately
 /// from expression return values. State (variables, functions) persists between
 /// evaluations.
+///
+/// # Thread Safety
+///
+/// The Lua runtime is wrapped in a `Mutex` to make `Repl` `Send`, allowing it to
+/// be moved between threads. However, the underlying Lua VM is NOT thread-safe
+/// (`!Sync`), so you cannot call methods on the same `Repl` from multiple threads
+/// concurrently. The mutex only enables moving the REPL across thread boundaries
+/// (e.g., in async contexts), not parallel access.
 ///
 /// # Example
 ///
@@ -24,7 +58,6 @@ use std::sync::{Mutex, mpsc};
 /// # }
 /// ```
 pub struct Repl {
-    // TODO: check if mutex is actually necessary
     runtime: Mutex<mlua::Lua>,
     output_receiver: mpsc::Receiver<String>,
 }
@@ -130,6 +163,100 @@ impl Repl {
         let output = self.output_receiver.try_iter().collect();
 
         Ok(EvalOutcome { result, output })
+    }
+
+    /// Provides temporary access to the underlying Lua runtime.
+    ///
+    /// This method allows you to perform advanced operations that aren't exposed
+    /// by the REPL's main API, such as registering custom Rust functions or
+    /// modifying global state.
+    ///
+    /// # Note on Thread Safety
+    ///
+    /// While this method uses a Mutex, the underlying Lua VM is NOT thread-safe.
+    /// The Mutex only ensures `Repl` can be sent between threads; you cannot
+    /// call Lua operations from multiple threads concurrently.
+    ///
+    /// # Parameters
+    ///
+    /// * `f` - A closure that receives an immutable reference to the Lua runtime
+    ///         and can return any type wrapped in `Result<T, mlua::Error>`
+    ///
+    /// # Returns
+    ///
+    /// Returns whatever the closure returns, or a `ReplError` if the lock is poisoned
+    /// or the Lua operation fails.
+    ///
+    /// # Examples
+    ///
+    /// ## Registering a Custom Rust Function
+    ///
+    /// ```
+    /// use onetool::Repl;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let repl = Repl::new()?;
+    ///
+    /// // Register a function with captured state
+    /// let multiplier = 10;
+    /// repl.with_runtime(|lua| {
+    ///     let func = lua.create_function(move |_, x: i32| {
+    ///         Ok(x * multiplier)
+    ///     })?;
+    ///     lua.globals().set("multiply", func)?;
+    ///     Ok(())
+    /// })?;
+    ///
+    /// let result = repl.eval("return multiply(5)")?;
+    /// assert_eq!(result.result.unwrap()[0], "50");
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Setting Global Variables
+    ///
+    /// ```
+    /// use onetool::Repl;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let repl = Repl::new()?;
+    ///
+    /// // Set a global variable from Rust
+    /// repl.with_runtime(|lua| {
+    ///     lua.globals().set("API_KEY", "secret-key-123")?;
+    ///     lua.globals().set("MAX_RETRIES", 3)?;
+    ///     Ok(())
+    /// })?;
+    ///
+    /// let result = repl.eval("return API_KEY, MAX_RETRIES")?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Extracting Values from Lua
+    ///
+    /// ```
+    /// use onetool::Repl;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let repl = Repl::new()?;
+    /// repl.eval("counter = 42")?;
+    ///
+    /// // Extract a value from Lua to Rust
+    /// let counter: i32 = repl.with_runtime(|lua| {
+    ///     lua.globals().get("counter")
+    /// })?;
+    ///
+    /// assert_eq!(counter, 42);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_runtime<F, R>(&self, f: F) -> Result<R, ReplError>
+    where
+        F: FnOnce(&mlua::Lua) -> Result<R, mlua::Error>,
+    {
+        let runtime = self.runtime.lock().map_err(|_| ReplError::LockPoisoned)?;
+        f(&runtime).map_err(ReplError::from)
     }
 
     fn format_lua_error(error: &mlua::Error) -> String {
@@ -548,5 +675,148 @@ mod tests {
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
         assert!(result[0].contains("a,b,c"));
+    }
+
+    // === G. Runtime Access Tests ===
+
+    #[test]
+    fn test_with_runtime_set_global_variable() {
+        let repl = create_repl();
+
+        let result = repl.with_runtime(|lua| {
+            lua.globals().set("custom_var", 42)?;
+            Ok(())
+        });
+
+        assert!(result.is_ok());
+
+        let eval = repl.eval("return custom_var").unwrap();
+        assert!(eval.result.is_ok());
+        assert_eq!(eval.result.unwrap()[0], "42");
+    }
+
+    #[test]
+    fn test_with_runtime_register_rust_function() {
+        let repl = create_repl();
+
+        let result = repl.with_runtime(|lua| {
+            let greet = lua.create_function(|_, name: String| Ok(format!("Hello, {}!", name)))?;
+            lua.globals().set("greet", greet)?;
+            Ok(())
+        });
+
+        assert!(result.is_ok());
+
+        let eval = repl.eval(r#"return greet("World")"#).unwrap();
+        assert!(eval.result.is_ok());
+        let result = eval.result.unwrap();
+        assert!(result[0].contains("Hello, World!"));
+    }
+
+    #[test]
+    fn test_with_runtime_closure_captures_state() {
+        let repl = create_repl();
+
+        let multiplier = 10;
+        let result = repl.with_runtime(|lua| {
+            let func = lua.create_function(move |_, x: i32| Ok(x * multiplier))?;
+            lua.globals().set("multiply", func)?;
+            Ok(())
+        });
+
+        assert!(result.is_ok());
+
+        let eval = repl.eval("return multiply(5)").unwrap();
+        assert!(eval.result.is_ok());
+        assert_eq!(eval.result.unwrap()[0], "50");
+    }
+
+    #[test]
+    fn test_with_runtime_extract_value_from_lua() {
+        let repl = create_repl();
+        repl.eval("x = 42").unwrap();
+
+        let value: i32 = repl.with_runtime(|lua| lua.globals().get("x")).unwrap();
+
+        assert_eq!(value, 42);
+    }
+
+    #[test]
+    fn test_with_runtime_extract_string_from_lua() {
+        let repl = create_repl();
+        repl.eval(r#"name = "Alice""#).unwrap();
+
+        let value: String = repl.with_runtime(|lua| lua.globals().get("name")).unwrap();
+
+        assert_eq!(value, "Alice");
+    }
+
+    #[test]
+    fn test_with_runtime_returns_custom_type() {
+        let repl = create_repl();
+        repl.eval("a = 10; b = 20").unwrap();
+
+        let sum: i32 = repl
+            .with_runtime(|lua| {
+                let a: i32 = lua.globals().get("a")?;
+                let b: i32 = lua.globals().get("b")?;
+                Ok(a + b)
+            })
+            .unwrap();
+
+        assert_eq!(sum, 30);
+    }
+
+    #[test]
+    fn test_with_runtime_error_propagation() {
+        let repl = create_repl();
+
+        let result: Result<(), ReplError> = repl.with_runtime(|lua| {
+            // Try to get a non-existent global as a number (will fail)
+            let _val: i32 = lua.globals().get("nonexistent")?;
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        match result {
+            Err(ReplError::Lua(_)) => {}
+            _ => panic!("Expected Lua error"),
+        }
+    }
+
+    #[test]
+    fn test_with_runtime_multiple_operations() {
+        let repl = create_repl();
+
+        repl.with_runtime(|lua| {
+            lua.globals().set("a", 1)?;
+            lua.globals().set("b", 2)?;
+            lua.globals().set("c", 3)?;
+            Ok(())
+        })
+        .unwrap();
+
+        let eval = repl.eval("return a + b + c").unwrap();
+        assert!(eval.result.is_ok());
+        assert_eq!(eval.result.unwrap()[0], "6");
+    }
+
+    #[test]
+    fn test_with_runtime_state_persists_after_call() {
+        let repl = create_repl();
+
+        // First call sets a global
+        repl.with_runtime(|lua| {
+            lua.globals().set("persistent", 99)?;
+            Ok(())
+        })
+        .unwrap();
+
+        // Second call should see the same global
+        let value: i32 = repl
+            .with_runtime(|lua| lua.globals().get("persistent"))
+            .unwrap();
+
+        assert_eq!(value, 99);
     }
 }

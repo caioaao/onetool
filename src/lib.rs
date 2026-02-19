@@ -40,7 +40,7 @@
 //! - [`tool_definition`]: Tool schema for LLM integration
 
 // -- Flatten
-pub use repl::Repl;
+pub use repl::{Repl, ReplError};
 
 // -- Public modules
 pub mod repl;
