@@ -322,34 +322,34 @@ let tool = tool_definition::genai_tool();
 **Basic REPL only** (no LLM framework):
 ```toml
 [dependencies]
-onetool = "0.0.1-alpha.3"
+onetool = "0.0.1-alpha.4"
 ```
 
 **With genai:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.3", features = ["genai"] }
+onetool = { version = "0.0.1-alpha.4", features = ["genai"] }
 genai = "0.5"
 ```
 
 **With mistralrs:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.3", features = ["mistralrs"] }
+onetool = { version = "0.0.1-alpha.4", features = ["mistralrs"] }
 mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git" }
 ```
 
 **With rig:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.3", features = ["rig"] }
+onetool = { version = "0.0.1-alpha.4", features = ["rig"] }
 rig-core = "0.3"
 ```
 
 **With aisdk:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.3", features = ["aisdk"] }
+onetool = { version = "0.0.1-alpha.4", features = ["aisdk"] }
 aisdk = "0.2"
 ```
 
@@ -430,7 +430,7 @@ Full API documentation available at [docs.rs/onetool](https://docs.rs/onetool).
 
 ## Project Status
 
-- **Version**: 0.0.1-alpha.3
+- **Version**: 0.0.1-alpha.4
 - **Stability**: Alpha - API may change, but core concept is stable
 - **Production Ready**: Not yet - use at your own risk
 
