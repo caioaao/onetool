@@ -21,3 +21,8 @@ serde_json = "1.0.149"
 [features]
 json_schema = ["dep:serde_json"]
 genai = ["dep:genai", "json_schema"]
+
+[[example]]
+name = "genai-basic"
+path = "examples/genai-basic.rs"
+required-features = ["genai"]
