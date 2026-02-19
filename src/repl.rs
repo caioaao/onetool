@@ -1,5 +1,5 @@
-use crate::runtime;
-use std::sync::{Mutex, mpsc};
+use crate::runtime::{self, output};
+use std::sync::Mutex;
 
 /// Errors that can occur during REPL operations.
 #[derive(Debug)]
@@ -59,7 +59,6 @@ impl From<mlua::Error> for ReplError {
 /// ```
 pub struct Repl {
     runtime: Mutex<mlua::Lua>,
-    output_receiver: mpsc::Receiver<String>,
 }
 
 /// Result of evaluating Lua code.
@@ -140,13 +139,9 @@ impl Repl {
     /// If you don't need pre-sandboxing setup, prefer [`Repl::new()`] with
     /// [`with_runtime()`](Repl::with_runtime) for simpler initialization.
     pub fn new_with(runtime: mlua::Lua) -> Result<Self, mlua::Error> {
-        let output_receiver = runtime::output::capture_output(&runtime)?;
         let runtime = Mutex::new(runtime);
 
-        Ok(Self {
-            runtime,
-            output_receiver,
-        })
+        Ok(Self { runtime })
     }
 
     /// Evaluates Lua code and captures output.
@@ -175,15 +170,17 @@ impl Repl {
     pub fn eval(&self, code: &str) -> Result<EvalOutcome, mlua::Error> {
         let runtime = self.runtime.lock().unwrap();
 
-        let result = match runtime.load(code).eval::<mlua::MultiValue>() {
+        let (eval_result, output) = output::with_output_capture(&runtime, |runtime| {
+            runtime.load(code).eval::<mlua::MultiValue>()
+        })?;
+
+        let result = match eval_result {
             Ok(values) => Ok(values
                 .iter()
                 .map(|v| format!("{:#?}", v))
                 .collect::<Vec<_>>()),
             Err(e) => Err(Self::format_lua_error(&e)),
         };
-
-        let output = self.output_receiver.try_iter().collect();
 
         Ok(EvalOutcome { result, output })
     }

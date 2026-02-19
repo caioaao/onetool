@@ -12,13 +12,25 @@
 //!
 //! For example, `print("a", "b", "c")` produces `"a\tb\tc\n"`.
 
-use std::sync::mpsc;
-
-/// Intercepts `print()` calls and returns a channel receiver for captured output.
+/// Executes a closure with `print()` output capture, returning both the result and captured output.
 ///
-/// Replaces the global `print()` function with a version that sends output to a channel
-/// instead of stdout. Arguments are converted to strings, joined with tabs, and have a
-/// newline appended.
+/// Temporarily replaces the global `print()` function with a version that captures output.
+/// Arguments are converted to strings, joined with tabs, and have a newline appended.
+/// After the closure completes, the original `print()` function is restored.
+///
+/// # Returns
+///
+/// A tuple of:
+/// - The result of the closure execution (which may be `Ok` or `Err`)
+/// - A vector of captured output strings
+///
+/// # Output Format
+///
+/// Each `print()` call produces one string with:
+/// - Arguments separated by tabs
+/// - A trailing newline
+///
+/// For example, `print("a", "b", "c")` produces `"a\tb\tc\n"`.
 ///
 /// # Example
 ///
@@ -27,192 +39,197 @@ use std::sync::mpsc;
 ///
 /// # fn example() -> mlua::Result<()> {
 /// let lua = mlua::Lua::new();
-/// let rx = output::capture_output(&lua)?;
+/// let (result, output) = output::with_output_capture(&lua, |lua| {
+///     lua.load(r#"print("hello", "world")"#).exec()?;
+///     lua.load(r#"return 42"#).eval::<i32>()
+/// })?;
 ///
-/// lua.load(r#"print("hello", "world")"#).exec()?;
-///
-/// let output: Vec<String> = rx.try_iter().collect();
+/// assert_eq!(result.unwrap(), 42);
 /// assert_eq!(output, vec!["hello\tworld\n"]);
 /// # Ok(())
 /// # }
 /// ```
-pub fn capture_output(lua: &mlua::Lua) -> mlua::Result<mpsc::Receiver<String>> {
-    let (tx, rx) = mpsc::channel::<String>();
-    let lua_tostring: mlua::Function = lua.globals().get("tostring")?;
+pub fn with_output_capture<F, R>(
+    lua: &mlua::Lua,
+    f: F,
+) -> Result<(Result<R, mlua::Error>, Vec<String>), mlua::Error>
+where
+    F: FnOnce(&mlua::Lua) -> Result<R, mlua::Error>,
+{
+    let mut output_buf: Vec<String> = Vec::new();
 
-    let print_fn = lua.create_function(move |_lua, args: mlua::MultiValue| {
-        let mut line = args
-            .iter()
-            .map(|v| lua_tostring.call::<String>(v))
-            .collect::<Result<Vec<_>, _>>()?
-            .join("\t");
-        line.push('\n');
+    let result = lua.scope(|scope| {
+        lua.globals().set(
+            "print",
+            scope.create_function_mut(|_, args: mlua::MultiValue| {
+                let lua_tostring: mlua::Function = lua.globals().get("tostring")?;
+                let mut line = args
+                    .iter()
+                    .map(|v| lua_tostring.call::<String>(v))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join("\t");
+                line.push('\n');
 
-        tx.send(line).expect("Failed to send output");
+                output_buf.push(line);
 
-        Ok(())
-    })?;
+                Ok(())
+            })?,
+        )?;
 
-    lua.globals().set("print", print_fn)?;
+        f(lua)
+    });
 
-    Ok(rx)
+    Ok((result, output_buf))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Helper function to collect all messages from a receiver
-    fn collect_output(rx: mpsc::Receiver<String>) -> String {
-        rx.try_iter().collect()
+    #[test]
+    fn test_with_output_capture_single_print() {
+        let lua = mlua::Lua::new();
+
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"print("hello")"#).exec()).unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output, vec!["hello\n"]);
     }
 
     #[test]
-    fn test_capture_output_single_print() {
+    fn test_with_output_capture_multiple_prints() {
         let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
 
-        lua.load(r#"print("hello")"#).exec().unwrap();
-
-        assert_eq!(collect_output(rx), "hello\n");
-    }
-
-    #[test]
-    fn test_capture_output_multiple_prints() {
-        let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
-
-        lua.load(
-            r#"
-            print("line1")
-            print("line2")
-            print("line3")
-        "#,
-        )
-        .exec()
+        let (result, output) = with_output_capture(&lua, |lua| {
+            lua.load(
+                r#"
+                print("line1")
+                print("line2")
+                print("line3")
+            "#,
+            )
+            .exec()
+        })
         .unwrap();
 
-        assert_eq!(collect_output(rx), "line1\nline2\nline3\n");
+        assert!(result.is_ok());
+        assert_eq!(output, vec!["line1\n", "line2\n", "line3\n"]);
     }
 
     #[test]
-    fn test_capture_output_returns_accumulated() {
+    fn test_with_output_capture_multiple_args() {
         let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
 
-        lua.load(r#"print("first")"#).exec().unwrap();
-        lua.load(r#"print("second")"#).exec().unwrap();
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"print("a", "b", "c")"#).exec()).unwrap();
 
-        assert_eq!(collect_output(rx), "first\nsecond\n");
+        assert!(result.is_ok());
+        assert_eq!(output, vec!["a\tb\tc\n"]);
     }
 
     #[test]
-    fn test_capture_output_with_multiple_args() {
+    fn test_with_output_capture_converts_numbers() {
         let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
 
-        lua.load(r#"print("a", "b", "c")"#).exec().unwrap();
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"print(42)"#).exec()).unwrap();
 
-        assert_eq!(collect_output(rx), "a\tb\tc\n");
+        assert!(result.is_ok());
+        assert_eq!(output, vec!["42\n"]);
     }
 
     #[test]
-    fn test_capture_output_with_newlines() {
+    fn test_with_output_capture_handles_nil() {
         let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
 
-        lua.load(
-            r#"
-            print("x")
-            print("y")
-        "#,
-        )
-        .exec()
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"print(nil)"#).exec()).unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output, vec!["nil\n"]);
+    }
+
+    #[test]
+    fn test_with_output_capture_handles_booleans() {
+        let lua = mlua::Lua::new();
+
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"print(true, false)"#).exec()).unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output, vec!["true\tfalse\n"]);
+    }
+
+    #[test]
+    fn test_with_output_capture_empty_output() {
+        let lua = mlua::Lua::new();
+
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"local x = 42"#).exec()).unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_with_output_capture_no_args() {
+        let lua = mlua::Lua::new();
+
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"print()"#).exec()).unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output, vec!["\n"]);
+    }
+
+    #[test]
+    fn test_with_output_capture_handles_tables() {
+        let lua = mlua::Lua::new();
+
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"print({x = 1})"#).exec()).unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output.len(), 1);
+        assert!(output[0].starts_with("table: 0x"));
+    }
+
+    #[test]
+    fn test_with_output_capture_returns_value() {
+        let lua = mlua::Lua::new();
+
+        let (result, output) = with_output_capture(&lua, |lua| {
+            lua.load(r#"print("test"); return 42"#).eval::<i32>()
+        })
         .unwrap();
 
-        assert_eq!(collect_output(rx), "x\ny\n");
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(output, vec!["test\n"]);
     }
 
     #[test]
-    fn test_capture_output_converts_numbers() {
+    fn test_with_output_capture_captures_error() {
         let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
 
-        lua.load(r#"print(42)"#).exec().unwrap();
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load(r#"error("test error")"#).exec()).unwrap();
 
-        assert_eq!(collect_output(rx), "42\n");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("test error"));
+        assert_eq!(output, Vec::<String>::new());
     }
 
     #[test]
-    fn test_capture_output_handles_nil() {
-        let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
-
-        lua.load(r#"print(nil)"#).exec().unwrap();
-
-        assert_eq!(collect_output(rx), "nil\n");
-    }
-
-    #[test]
-    fn test_capture_output_multiple_captures_on_same_lua() {
-        let lua = mlua::Lua::new();
-        let rx1 = capture_output(&lua).unwrap();
-
-        lua.load(r#"print("first")"#).exec().unwrap();
-        assert_eq!(rx1.try_iter().collect::<String>(), "first\n");
-
-        // Install second capture - it replaces the print function
-        let rx2 = capture_output(&lua).unwrap();
-
-        lua.load(r#"print("second")"#).exec().unwrap();
-
-        // First receiver no longer receives new messages (print was replaced)
-        assert_eq!(rx1.try_iter().collect::<String>(), "");
-        // Second receiver has new output
-        assert_eq!(rx2.try_iter().collect::<String>(), "second\n");
-    }
-
-    #[test]
-    fn test_capture_output_accumulates_across_evals() {
-        let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
-
-        lua.load(r#"print("first")"#).exec().unwrap();
-        lua.load(r#"print("second")"#).exec().unwrap();
-        lua.load(r#"print("third")"#).exec().unwrap();
-
-        assert_eq!(collect_output(rx), "first\nsecond\nthird\n");
-    }
-
-    #[test]
-    fn test_capture_output_empty_output() {
-        let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
-
-        // Execute code that doesn't print
-        lua.load(r#"local x = 42"#).exec().unwrap();
-
-        assert_eq!(collect_output(rx), "");
-    }
-
-    #[test]
-    fn test_capture_output_no_args() {
-        let lua = mlua::Lua::new();
-        let rx = capture_output(&lua).unwrap();
-
-        lua.load(r#"print()"#).exec().unwrap();
-
-        assert_eq!(collect_output(rx), "\n");
-    }
-
-    #[test]
-    fn test_capture_output_handles_tables() {
+    fn test_with_output_capture_output_before_error() {
         let lua = mlua::Lua::new();
 
-        let rx = capture_output(&lua).unwrap();
+        let (result, output) = with_output_capture(&lua, |lua| {
+            lua.load(r#"print("before"); error("test error")"#).exec()
+        })
+        .unwrap();
 
-        lua.load(r#"print({x = 1})"#).exec().unwrap();
-        let output = collect_output(rx);
-        assert!(output.starts_with("table: 0x"));
+        assert!(result.is_err());
+        assert_eq!(output, vec!["before\n"]);
     }
 }

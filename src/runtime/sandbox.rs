@@ -176,7 +176,7 @@ fn sandbox_os_module(lua: &mlua::Lua) -> mlua::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::output::capture_output;
+    use crate::runtime::output::with_output_capture;
 
     use super::*;
 
@@ -215,24 +215,30 @@ mod tests {
     fn allowed_os_time() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
-        let rx = capture_output(&lua).unwrap();
 
         // os.time should work
-        lua.load("print(type(os.time()))").exec().unwrap();
-        let output: String = rx.try_iter().collect();
-        assert!(output.contains("number"));
+        let (result, output) =
+            with_output_capture(&lua, |lua| lua.load("print(type(os.time()))").exec()).unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output.len(), 1);
+        assert!(output[0].contains("number"));
     }
 
     #[test]
     fn allowed_os_date() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
-        let rx = capture_output(&lua).unwrap();
 
         // os.date should work
-        lua.load("print(type(os.date('%Y-%m-%d')))").exec().unwrap();
-        let output: String = rx.try_iter().collect();
-        assert!(output.contains("string"));
+        let (result, output) = with_output_capture(&lua, |lua| {
+            lua.load("print(type(os.date('%Y-%m-%d')))").exec()
+        })
+        .unwrap();
+
+        assert!(result.is_ok());
+        assert_eq!(output.len(), 1);
+        assert!(output[0].contains("string"));
     }
 
     #[test]
