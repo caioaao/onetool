@@ -14,6 +14,7 @@ pub const DESCRIPTION: &str = r#"Execute Lua code in a long-lived sandboxed REPL
 - print() output capture (appears in tool response)
 - Persistent state between executions (variables, functions, tables)
 - Safe operations: string, table, math, utf8, os.time, os.date
+- Documentation: available via global `docs` variable
 
 **Restrictions:**
 - No file I/O or network access
@@ -23,7 +24,6 @@ pub const DESCRIPTION: &str = r#"Execute Lua code in a long-lived sandboxed REPL
 
 **Environment:**
 - Sandboxed Lua 5.4
-- Documentation available via global `docs` variable
 
 **Input:**
 - source_code: Lua code to execute
