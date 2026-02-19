@@ -1,5 +1,5 @@
 use crate::runtime;
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 
 /// Main interface for evaluating Lua code in a sandboxed environment.
 ///
@@ -24,7 +24,8 @@ use std::sync::mpsc;
 /// # }
 /// ```
 pub struct Repl {
-    runtime: mlua::Lua,
+    // TODO: check if mutex is actually necessary
+    runtime: Mutex<mlua::Lua>,
     output_receiver: mpsc::Receiver<String>,
 }
 
@@ -84,6 +85,7 @@ impl Repl {
     /// ```
     pub fn new_with(runtime: mlua::Lua) -> Result<Self, mlua::Error> {
         let output_receiver = runtime::output::capture_output(&runtime)?;
+        let runtime = Mutex::new(runtime);
 
         Ok(Self {
             runtime,
@@ -115,7 +117,9 @@ impl Repl {
     /// # }
     /// ```
     pub fn eval(&self, code: &str) -> Result<EvalOutcome, mlua::Error> {
-        let result = match self.runtime.load(code).eval::<mlua::MultiValue>() {
+        let runtime = self.runtime.lock().unwrap();
+
+        let result = match runtime.load(code).eval::<mlua::MultiValue>() {
             Ok(values) => Ok(values
                 .iter()
                 .map(|v| format!("{:#?}", v))
