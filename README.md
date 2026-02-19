@@ -182,21 +182,21 @@ let tool = tool_definition::genai_tool();
 **Basic setup:**
 ```toml
 [dependencies]
-onetool = "0.0.1-alpha.2"
+onetool = "0.0.1-alpha.3"
 tokio = { version = "1", features = ["full"] }
 ```
 
 **With genai integration:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.2", features = ["genai"] }
+onetool = { version = "0.0.1-alpha.3", features = ["genai"] }
 genai = "0.5"
 ```
 
 **With JSON Schema only:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.2", features = ["json_schema"] }
+onetool = { version = "0.0.1-alpha.3", features = ["json_schema"] }
 ```
 
 **Note:** Currently in alpha - API may change.
@@ -262,7 +262,7 @@ Full API documentation available at [docs.rs/onetool](https://docs.rs/onetool).
 
 ## Project Status
 
-- **Version**: 0.0.1-alpha.2
+- **Version**: 0.0.1-alpha.3
 - **Stability**: Alpha - API may change, but core concept is stable
 - **Production Ready**: Not yet - use at your own risk
 
