@@ -408,6 +408,109 @@ cargo run --example lua-repl
 
 This lets you experiment with Lua code and understand what the LLM sees. No API key required.
 
+**custom-functions** (runtime extension):
+```bash
+cargo run --example custom-functions
+```
+Shows how to extend the runtime with custom Rust functions. Includes interactive REPL for testing.
+Source: [`examples/custom-functions.rs`](examples/custom-functions.rs)
+
+## Extending the Runtime
+
+onetool allows you to extend the Lua runtime with custom Rust functions, enabling domain-specific capabilities for your LLM agents.
+
+### Extension Methods
+
+There are two approaches to adding custom functions:
+
+#### Method 1: Post-Initialization (`with_runtime()`)
+
+Best for adding functions after creating the REPL:
+
+```rust
+use onetool::Repl;
+
+let repl = Repl::new()?;
+
+// Add a custom function
+repl.with_runtime(|lua| {
+    let my_func = lua.create_function(|_, name: String| {
+        Ok(format!("Hello, {}!", name))
+    })?;
+    lua.globals().set("greet", my_func)?;
+    Ok(())
+})?;
+
+// Now callable from Lua
+let result = repl.eval("return greet('World')")?;
+```
+
+**Use when:**
+- Adding functions to an existing REPL
+- Functions don't need to interact with sandboxing
+- Simpler initialization flow
+
+#### Method 2: Pre-Sandboxing (`new_with()`)
+
+Best for complex initialization scenarios:
+
+```rust
+use onetool::{Repl, runtime};
+
+let lua = mlua::Lua::new();
+
+// Set up custom globals
+lua.globals().set("API_KEY", "secret")?;
+
+// Register custom functions
+let fetch = lua.create_function(|_, url: String| {
+    // ... implementation
+    Ok("response".to_string())
+})?;
+lua.globals().set("fetch", fetch)?;
+
+// Apply sandboxing AFTER custom setup
+runtime::sandbox::apply(&lua)?;
+
+let repl = Repl::new_with(lua)?;
+```
+
+**Use when:**
+- Need to set up complex state before sandboxing
+- Custom functions require special initialization
+- Building framework adapters
+
+### Complete Example
+
+See [`examples/custom-functions.rs`](examples/custom-functions.rs) for a complete demonstration including:
+- Multiple function patterns (simple, error handling, stateful)
+- Stateful closures with Arc + Atomic
+- Error propagation from Rust to Lua
+- Documentation registration
+- Interactive testing
+
+### Registering Documentation
+
+Make your custom functions discoverable via the `docs` system:
+
+```rust
+use onetool::runtime::docs::{register, LuaDoc, LuaDocTyp};
+
+repl.with_runtime(|lua| {
+    // ... create and register function ...
+
+    // Register documentation
+    register(lua, &LuaDoc {
+        name: "my_function".to_string(),
+        typ: LuaDocTyp::Function,
+        description: "Does something useful".to_string(),
+    })?;
+    Ok(())
+})?;
+```
+
+The LLM can then query `docs["my_function"]` at runtime to understand available functions.
+
 ## API Overview
 
 

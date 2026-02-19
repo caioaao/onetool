@@ -116,6 +116,29 @@ impl Repl {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Security Warning
+    ///
+    /// When using `new_with()`, you MUST call `runtime::sandbox::apply()` to ensure
+    /// the runtime is properly sandboxed. Failing to do so exposes dangerous operations:
+    ///
+    /// ```no_run
+    /// use onetool::{Repl, runtime};
+    ///
+    /// # fn example() -> Result<(), mlua::Error> {
+    /// let lua = mlua::Lua::new();
+    /// lua.globals().set("my_data", 42)?;
+    ///
+    /// // CRITICAL: Apply sandboxing before creating REPL
+    /// runtime::sandbox::apply(&lua)?;
+    ///
+    /// let repl = Repl::new_with(lua)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// If you don't need pre-sandboxing setup, prefer [`Repl::new()`] with
+    /// [`with_runtime()`](Repl::with_runtime) for simpler initialization.
     pub fn new_with(runtime: mlua::Lua) -> Result<Self, mlua::Error> {
         let output_receiver = runtime::output::capture_output(&runtime)?;
         let runtime = Mutex::new(runtime);
@@ -251,6 +274,47 @@ impl Repl {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// ## Registering Custom Modules
+    ///
+    /// ```
+    /// use onetool::{Repl, runtime::docs};
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let repl = Repl::new()?;
+    ///
+    /// repl.with_runtime(|lua| {
+    ///     // Create a module table
+    ///     let utils = lua.create_table()?;
+    ///
+    ///     // Add functions to the module
+    ///     let double = lua.create_function(|_, x: i32| Ok(x * 2))?;
+    ///     utils.set("double", double)?;
+    ///
+    ///     // Register the module
+    ///     lua.globals().set("utils", utils)?;
+    ///
+    ///     // Register documentation
+    ///     docs::register(lua, &docs::LuaDoc {
+    ///         name: "utils".to_string(),
+    ///         typ: docs::LuaDocTyp::Scope,
+    ///         description: "Utility functions".to_string(),
+    ///     })?;
+    ///
+    ///     Ok(())
+    /// })?;
+    ///
+    /// let result = repl.eval("return utils.double(5)")?;
+    /// assert_eq!(result.result.unwrap()[0], "10");
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## See Also
+    ///
+    /// - [`new_with()`](Repl::new_with) for pre-sandboxing extension
+    /// - [`runtime::docs::register()`] for making functions discoverable
+    /// - `examples/custom-functions.rs` for complete patterns
     pub fn with_runtime<F, R>(&self, f: F) -> Result<R, ReplError>
     where
         F: FnOnce(&mlua::Lua) -> Result<R, mlua::Error>,
