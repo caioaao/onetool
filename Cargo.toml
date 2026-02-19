@@ -6,10 +6,13 @@ license = "MIT"
 description = "The last LLM tool you'll every need"
 
 [dependencies]
-mlua = { version = "0.11.5", features = ["lua54", "vendored"] }
+mlua = { version = "0.11.5", features = ["lua54", "vendored", "send"] }
 tracing = "0.1"
+serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0.149", optional = true }
 genai = { version = "0.5.3", optional = true }
+rig-core = { version = "0.31", optional = true }
+once_cell = { version = "1.20", optional = true }
 
 [dev-dependencies]
 genai = "0.5.3"
@@ -17,12 +20,21 @@ tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rustyline = "14.0"
 serde_json = "1.0.149"
+anyhow = "1.0"
+rig-core = "0.31"
+serde = { version = "1.0", features = ["derive"] }
 
 [features]
 json_schema = ["dep:serde_json"]
 genai = ["dep:genai", "json_schema"]
+rig = ["dep:rig-core", "dep:serde", "dep:once_cell", "json_schema"]
 
 [[example]]
 name = "genai-basic"
 path = "examples/genai-basic.rs"
 required-features = ["genai"]
+
+[[example]]
+name = "rig-basic"
+path = "examples/rig-basic.rs"
+required-features = ["rig"]

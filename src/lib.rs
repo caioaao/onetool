@@ -49,3 +49,6 @@ pub mod tool_definition;
 
 #[cfg(feature = "genai")]
 pub mod genai;
+
+#[cfg(feature = "rig")]
+pub mod rig;
