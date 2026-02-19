@@ -38,7 +38,6 @@
           packages = [
             rustVersion
             pkgs.cargo-watch # Optional: useful for development
-            pkgs.rust-analyzer # Optional: LSP support
           ];
 
           # Environment variables
