@@ -11,6 +11,7 @@ tracing = "0.1"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0.149", optional = true }
 genai = { version = "0.5.3", optional = true }
+mistralrs = { version = "0.7", optional = true }
 rig-core = { version = "0.31", optional = true }
 once_cell = { version = "1.20", optional = true }
 
@@ -20,6 +21,7 @@ tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rustyline = "14.0"
 serde_json = "1.0.149"
+mistralrs = "0.7"
 anyhow = "1.0"
 rig-core = "0.31"
 serde = { version = "1.0", features = ["derive"] }
@@ -27,12 +29,18 @@ serde = { version = "1.0", features = ["derive"] }
 [features]
 json_schema = ["dep:serde_json"]
 genai = ["dep:genai", "json_schema"]
+mistralrs = ["dep:mistralrs", "json_schema"]
 rig = ["dep:rig-core", "dep:serde", "dep:once_cell", "json_schema"]
 
 [[example]]
 name = "genai-basic"
 path = "examples/genai-basic.rs"
 required-features = ["genai"]
+
+[[example]]
+name = "mistralrs-basic"
+path = "examples/mistralrs-basic.rs"
+required-features = ["mistralrs"]
 
 [[example]]
 name = "rig-basic"
