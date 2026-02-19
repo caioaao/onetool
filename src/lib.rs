@@ -6,14 +6,13 @@
 //!
 //! # Quick Start
 //!
-//! ```no_run
+//! ```
 //! use onetool::Repl;
 //!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!  fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let repl = Repl::new()?;
 //!
-//!     let outcome = repl.eval("return 1 + 1").await?;
+//!     let outcome = repl.eval("return 1 + 1")?;
 //!
 //!     match outcome.result {
 //!         Ok(values) => println!("Result: {:?}", values),

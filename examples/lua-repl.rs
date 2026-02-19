@@ -3,8 +3,7 @@
 
 use rustyline::DefaultEditor;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn main() {
     let repl = onetool::Repl::new().expect("Failed to initialize REPL");
     let mut editor = DefaultEditor::new().expect("Failed to create editor");
 
@@ -22,7 +21,7 @@ async fn main() {
             match editor.readline("> ") {
                 Ok(line) => {
                     editor.add_history_entry(&line).unwrap();
-                    match repl.eval(&line).await {
+                    match repl.eval(&line) {
                         Ok(result) => {
                             println!("-- OUTPUT:\n{}", result.output.join("\n"));
                             match result.result {

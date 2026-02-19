@@ -9,15 +9,15 @@ use std::sync::mpsc;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use onetool::Repl;
 ///
-/// # async fn example() -> Result<(), mlua::Error> {
+/// # fn example() -> Result<(), mlua::Error> {
 /// let repl = Repl::new()?;
 ///
 /// // State persists across evaluations
-/// repl.eval("x = 42").await?;
-/// let outcome = repl.eval("return x * 2").await?;
+/// repl.eval("x = 42")?;
+/// let outcome = repl.eval("return x * 2")?;
 ///
 /// assert_eq!(outcome.result.unwrap()[0], "84");
 /// # Ok(())
@@ -52,9 +52,9 @@ impl Repl {
     /// ```no_run
     /// use onetool::Repl;
     ///
-    /// # async fn example() -> Result<(), mlua::Error> {
+    /// # fn example() -> Result<(), mlua::Error> {
     /// let repl = Repl::new()?;
-    /// let outcome = repl.eval("return math.sqrt(16)").await?;
+    /// let outcome = repl.eval("return math.sqrt(16)")?;
     /// # Ok(())
     /// # }
     /// ```
@@ -72,13 +72,13 @@ impl Repl {
     /// ```no_run
     /// use onetool::{Repl, runtime};
     ///
-    /// # async fn example() -> Result<(), mlua::Error> {
+    /// # fn example() -> Result<(), mlua::Error> {
     /// let lua = mlua::Lua::new();
     /// lua.globals().set("custom_value", 42)?;
     /// runtime::sandbox::apply(&lua)?;  // Apply sandboxing manually
     ///
     /// let repl = Repl::new_with(lua)?;
-    /// let outcome = repl.eval("return custom_value").await?;
+    /// let outcome = repl.eval("return custom_value")?;
     /// # Ok(())
     /// # }
     /// ```
@@ -101,20 +101,20 @@ impl Repl {
     /// ```no_run
     /// use onetool::Repl;
     ///
-    /// # async fn example() -> Result<(), mlua::Error> {
+    /// # fn example() -> Result<(), mlua::Error> {
     /// let repl = Repl::new()?;
     ///
     /// let outcome = repl.eval(r#"
     ///     print("debug message")
     ///     return 1, 2, 3
-    /// "#).await?;
+    /// "#)?;
     ///
     /// assert_eq!(outcome.output, vec!["debug message\n"]);
     /// assert_eq!(outcome.result.unwrap(), vec!["1", "2", "3"]);
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn eval(&self, code: &str) -> Result<EvalOutcome, mlua::Error> {
+    pub fn eval(&self, code: &str) -> Result<EvalOutcome, mlua::Error> {
         let result = match self.runtime.load(code).eval::<mlua::MultiValue>() {
             Ok(values) => Ok(values
                 .iter()
@@ -146,7 +146,7 @@ mod tests {
     use super::*;
 
     // Helper function to create a new REPL instance
-    async fn create_repl() -> Repl {
+    fn create_repl() -> Repl {
         Repl::new().expect("Failed to create REPL")
     }
 
@@ -164,49 +164,49 @@ mod tests {
 
     // === A. Initialization Tests ===
 
-    #[tokio::test]
-    async fn test_new_creates_repl_successfully() {
+    #[test]
+    fn test_new_creates_repl_successfully() {
         let result = Repl::new();
         assert!(result.is_ok(), "Failed to create REPL: {:?}", result.err());
     }
 
-    #[tokio::test]
-    async fn test_new_with_custom_runtime() {
+    #[test]
+    fn test_new_with_custom_runtime() {
         let lua = mlua::Lua::new();
         // Set a global variable
         lua.globals().set("test_var", 42).unwrap();
 
         let repl = Repl::new_with(lua).unwrap();
-        let eval = repl.eval("return test_var").await.unwrap();
+        let eval = repl.eval("return test_var").unwrap();
 
         assert!(eval.result.is_ok());
         assert_eq!(eval.result.unwrap()[0], "42");
     }
 
-    #[tokio::test]
-    async fn test_new_applies_sandboxing() {
-        let repl = create_repl().await;
-        let eval = repl.eval("io.open('test.txt', 'r')").await.unwrap();
+    #[test]
+    fn test_new_applies_sandboxing() {
+        let repl = create_repl();
+        let eval = repl.eval("io.open('test.txt', 'r')").unwrap();
 
         assert_error_contains(&eval.result, "nil");
     }
 
     // === B. Successful Evaluation Tests ===
 
-    #[tokio::test]
-    async fn test_eval_simple_expression() {
-        let repl = create_repl().await;
-        let eval = repl.eval("1 + 1").await.unwrap();
+    #[test]
+    fn test_eval_simple_expression() {
+        let repl = create_repl();
+        let eval = repl.eval("1 + 1").unwrap();
 
         assert!(eval.result.is_ok());
         assert_eq!(eval.result.unwrap()[0], "2");
         assert!(eval.output.is_empty());
     }
 
-    #[tokio::test]
-    async fn test_eval_string_expression() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"return "hello""#).await.unwrap();
+    #[test]
+    fn test_eval_string_expression() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"return "hello""#).unwrap();
 
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
@@ -214,10 +214,10 @@ mod tests {
         assert!(result[0].contains("hello"));
     }
 
-    #[tokio::test]
-    async fn test_eval_multiple_return_values() {
-        let repl = create_repl().await;
-        let eval = repl.eval("return 1, 2, 3").await.unwrap();
+    #[test]
+    fn test_eval_multiple_return_values() {
+        let repl = create_repl();
+        let eval = repl.eval("return 1, 2, 3").unwrap();
 
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
@@ -227,10 +227,10 @@ mod tests {
         assert_eq!(result[2], "3");
     }
 
-    #[tokio::test]
-    async fn test_eval_nil_value() {
-        let repl = create_repl().await;
-        let eval = repl.eval("return nil").await.unwrap();
+    #[test]
+    fn test_eval_nil_value() {
+        let repl = create_repl();
+        let eval = repl.eval("return nil").unwrap();
 
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
@@ -239,11 +239,11 @@ mod tests {
         assert!(result[0].to_lowercase().contains("nil"));
     }
 
-    #[tokio::test]
-    async fn test_eval_boolean_values() {
-        let repl = create_repl().await;
-        let eval_true = repl.eval("return true").await.unwrap();
-        let eval_false = repl.eval("return false").await.unwrap();
+    #[test]
+    fn test_eval_boolean_values() {
+        let repl = create_repl();
+        let eval_true = repl.eval("return true").unwrap();
+        let eval_false = repl.eval("return false").unwrap();
 
         assert!(eval_true.result.is_ok());
         let result_true = eval_true.result.unwrap();
@@ -254,10 +254,10 @@ mod tests {
         assert!(result_false[0].contains("false"));
     }
 
-    #[tokio::test]
-    async fn test_eval_table_expression() {
-        let repl = create_repl().await;
-        let eval = repl.eval("return {x=1, y=2}").await.unwrap();
+    #[test]
+    fn test_eval_table_expression() {
+        let repl = create_repl();
+        let eval = repl.eval("return {x=1, y=2}").unwrap();
 
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
@@ -265,20 +265,20 @@ mod tests {
         assert!(!result.is_empty());
     }
 
-    #[tokio::test]
-    async fn test_eval_function_return() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"return string.upper("hello")"#).await.unwrap();
+    #[test]
+    fn test_eval_function_return() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"return string.upper("hello")"#).unwrap();
 
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
         assert!(result[0].contains("HELLO"));
     }
 
-    #[tokio::test]
-    async fn test_eval_empty_code() {
-        let repl = create_repl().await;
-        let eval = repl.eval("").await.unwrap();
+    #[test]
+    fn test_eval_empty_code() {
+        let repl = create_repl();
+        let eval = repl.eval("").unwrap();
 
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
@@ -286,10 +286,10 @@ mod tests {
         assert!(eval.output.is_empty());
     }
 
-    #[tokio::test]
-    async fn test_eval_assignment_no_return() {
-        let repl = create_repl().await;
-        let eval = repl.eval("x = 42").await.unwrap();
+    #[test]
+    fn test_eval_assignment_no_return() {
+        let repl = create_repl();
+        let eval = repl.eval("x = 42").unwrap();
 
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
@@ -298,19 +298,19 @@ mod tests {
 
     // === C. Output Capture Tests ===
 
-    #[tokio::test]
-    async fn test_eval_captures_print_output() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"print("test")"#).await.unwrap();
+    #[test]
+    fn test_eval_captures_print_output() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"print("test")"#).unwrap();
 
         assert_eq!(eval.output, vec!["test\n"]);
         assert!(eval.result.is_ok());
         assert!(eval.result.unwrap().is_empty());
     }
 
-    #[tokio::test]
-    async fn test_eval_captures_multiple_prints() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_captures_multiple_prints() {
+        let repl = create_repl();
         let eval = repl
             .eval(
                 r#"
@@ -319,23 +319,22 @@ mod tests {
             print("line3")
         "#,
             )
-            .await
             .unwrap();
 
         assert_eq!(eval.output, vec!["line1\n", "line2\n", "line3\n"]);
     }
 
-    #[tokio::test]
-    async fn test_eval_captures_print_with_multiple_args() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"print("a", "b", "c")"#).await.unwrap();
+    #[test]
+    fn test_eval_captures_print_with_multiple_args() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"print("a", "b", "c")"#).unwrap();
 
         assert_eq!(eval.output, vec!["a\tb\tc\n"]);
     }
 
-    #[tokio::test]
-    async fn test_eval_print_and_return_separate() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_print_and_return_separate() {
+        let repl = create_repl();
         let eval = repl
             .eval(
                 r#"
@@ -343,7 +342,6 @@ mod tests {
             return 42
         "#,
             )
-            .await
             .unwrap();
 
         assert_eq!(eval.output, vec!["output\n"]);
@@ -351,64 +349,64 @@ mod tests {
         assert_eq!(eval.result.unwrap()[0], "42");
     }
 
-    #[tokio::test]
-    async fn test_eval_print_various_types() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"print(42, nil, true, false)"#).await.unwrap();
+    #[test]
+    fn test_eval_print_various_types() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"print(42, nil, true, false)"#).unwrap();
 
         assert_eq!(eval.output, vec!["42\tnil\ttrue\tfalse\n"]);
     }
 
-    #[tokio::test]
-    async fn test_eval_output_not_accumulated() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_output_not_accumulated() {
+        let repl = create_repl();
 
-        let eval1 = repl.eval(r#"print("first")"#).await.unwrap();
+        let eval1 = repl.eval(r#"print("first")"#).unwrap();
         assert_eq!(eval1.output, vec!["first\n"]);
 
-        let eval2 = repl.eval(r#"print("second")"#).await.unwrap();
+        let eval2 = repl.eval(r#"print("second")"#).unwrap();
         assert_eq!(eval2.output, vec!["second\n"]);
     }
 
     // === D. Error Handling Tests ===
 
-    #[tokio::test]
-    async fn test_eval_syntax_error() {
-        let repl = create_repl().await;
-        let eval = repl.eval("function end").await.unwrap();
+    #[test]
+    fn test_eval_syntax_error() {
+        let repl = create_repl();
+        let eval = repl.eval("function end").unwrap();
 
         assert_error_contains(&eval.result, "SyntaxError:");
     }
 
-    #[tokio::test]
-    async fn test_eval_runtime_error() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"error("test error")"#).await.unwrap();
+    #[test]
+    fn test_eval_runtime_error() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"error("test error")"#).unwrap();
 
         assert_error_contains(&eval.result, "RuntimeError:");
         assert_error_contains(&eval.result, "test error");
     }
 
-    #[tokio::test]
-    async fn test_eval_undefined_variable_error() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_undefined_variable_error() {
+        let repl = create_repl();
         // In Lua, accessing undefined variables returns nil, not an error.
         // To get an error, we need to call a nil value or access a field on nil.
-        let eval = repl.eval("undefined_var()").await.unwrap();
+        let eval = repl.eval("undefined_var()").unwrap();
 
         assert_error_contains(&eval.result, "RuntimeError:");
     }
 
-    #[tokio::test]
-    async fn test_eval_type_error() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"return "string" + 1"#).await.unwrap();
+    #[test]
+    fn test_eval_type_error() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"return "string" + 1"#).unwrap();
 
         assert!(eval.result.is_err());
     }
 
-    #[tokio::test]
-    async fn test_eval_callback_error() {
+    #[test]
+    fn test_eval_callback_error() {
         let lua = mlua::Lua::new();
 
         // Create Rust function that errors
@@ -420,23 +418,23 @@ mod tests {
         lua.globals().set("error_fn", error_fn).unwrap();
 
         let repl = Repl::new_with(lua).unwrap();
-        let eval = repl.eval("error_fn()").await.unwrap();
+        let eval = repl.eval("error_fn()").unwrap();
 
         assert_error_contains(&eval.result, "CallbackError:");
         assert_error_contains(&eval.result, "callback failed");
     }
 
-    #[tokio::test]
-    async fn test_eval_blocked_function_error() {
-        let repl = create_repl().await;
-        let eval = repl.eval(r#"io.open("file.txt")"#).await.unwrap();
+    #[test]
+    fn test_eval_blocked_function_error() {
+        let repl = create_repl();
+        let eval = repl.eval(r#"io.open("file.txt")"#).unwrap();
 
         assert_error_contains(&eval.result, "nil");
     }
 
-    #[tokio::test]
-    async fn test_eval_error_preserves_output() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_error_preserves_output() {
+        let repl = create_repl();
         let eval = repl
             .eval(
                 r#"
@@ -444,7 +442,6 @@ mod tests {
             error("test error")
         "#,
             )
-            .await
             .unwrap();
 
         assert_eq!(eval.output, vec!["before error\n"]);
@@ -453,65 +450,62 @@ mod tests {
 
     // === E. State Persistence Tests ===
 
-    #[tokio::test]
-    async fn test_eval_state_persists_between_calls() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_state_persists_between_calls() {
+        let repl = create_repl();
 
-        let eval1 = repl.eval("x = 42").await.unwrap();
+        let eval1 = repl.eval("x = 42").unwrap();
         assert!(eval1.result.is_ok());
 
-        let eval2 = repl.eval("return x").await.unwrap();
+        let eval2 = repl.eval("return x").unwrap();
         assert!(eval2.result.is_ok());
         assert_eq!(eval2.result.unwrap()[0], "42");
     }
 
-    #[tokio::test]
-    async fn test_eval_function_definition_persists() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_function_definition_persists() {
+        let repl = create_repl();
 
-        let eval1 = repl
-            .eval("function double(n) return n * 2 end")
-            .await
-            .unwrap();
+        let eval1 = repl.eval("function double(n) return n * 2 end").unwrap();
         assert!(eval1.result.is_ok());
 
-        let eval2 = repl.eval("return double(21)").await.unwrap();
+        let eval2 = repl.eval("return double(21)").unwrap();
         assert!(eval2.result.is_ok());
         assert_eq!(eval2.result.unwrap()[0], "42");
     }
 
-    #[tokio::test]
-    async fn test_eval_global_table_persists() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_global_table_persists() {
+        let repl = create_repl();
 
-        let eval1 = repl.eval("my_table = {x = 10}").await.unwrap();
+        let eval1 = repl.eval("my_table = {x = 10}").unwrap();
         assert!(eval1.result.is_ok());
 
-        let eval2 = repl.eval("return my_table.x").await.unwrap();
+        let eval2 = repl.eval("return my_table.x").unwrap();
         assert!(eval2.result.is_ok());
         assert_eq!(eval2.result.unwrap()[0], "10");
     }
 
-    #[tokio::test]
-    async fn test_eval_table_modification_persists() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_eval_table_modification_persists() {
+        let repl = create_repl();
 
-        repl.eval("my_table = {x = 10}").await.unwrap();
-        repl.eval("my_table.x = 20").await.unwrap();
+        repl.eval("my_table = {x = 10}").unwrap();
+        repl.eval("my_table.x = 20").unwrap();
 
-        let eval = repl.eval("return my_table.x").await.unwrap();
+        let eval = repl.eval("return my_table.x").unwrap();
         assert!(eval.result.is_ok());
         assert_eq!(eval.result.unwrap()[0], "20");
     }
 
     // === F. Integration Tests ===
 
-    #[tokio::test]
-    async fn test_integration_with_safe_os_functions() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_integration_with_safe_os_functions() {
+        let repl = create_repl();
 
         // os.time should work
-        let eval = repl.eval("return os.time()").await.unwrap();
+        let eval = repl.eval("return os.time()").unwrap();
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
         assert!(!result.is_empty());
@@ -519,61 +513,36 @@ mod tests {
         assert!(result[0].parse::<i64>().is_ok());
     }
 
-    #[tokio::test]
-    async fn test_integration_math_functions() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_integration_math_functions() {
+        let repl = create_repl();
 
-        let eval = repl.eval("return math.sqrt(16)").await.unwrap();
+        let eval = repl.eval("return math.sqrt(16)").unwrap();
         assert!(eval.result.is_ok());
         // Lua may format as "4" or "4.0" depending on the value
         let result = eval.result.unwrap()[0].clone();
         assert!(result == "4" || result == "4.0");
     }
 
-    #[tokio::test]
-    async fn test_integration_string_functions() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_integration_string_functions() {
+        let repl = create_repl();
 
-        let eval = repl.eval(r#"return string.upper("test")"#).await.unwrap();
+        let eval = repl.eval(r#"return string.upper("test")"#).unwrap();
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
         assert!(result[0].contains("TEST"));
     }
 
-    #[tokio::test]
-    async fn test_integration_table_functions() {
-        let repl = create_repl().await;
+    #[test]
+    fn test_integration_table_functions() {
+        let repl = create_repl();
 
         let eval = repl
             .eval(r#"return table.concat({"a", "b", "c"}, ",")"#)
-            .await
             .unwrap();
         assert!(eval.result.is_ok());
         let result = eval.result.unwrap();
         assert!(result[0].contains("a,b,c"));
-    }
-
-    // === G. Async Behavior Tests ===
-
-    #[tokio::test]
-    async fn test_eval_is_async() {
-        let repl = create_repl().await;
-        let eval = repl.eval("return 1 + 1").await.unwrap();
-
-        assert!(eval.result.is_ok());
-        assert_eq!(eval.result.unwrap()[0], "2");
-    }
-
-    #[tokio::test]
-    async fn test_multiple_sequential_async_evals() {
-        let repl = create_repl().await;
-
-        let eval1 = repl.eval("return 1").await.unwrap();
-        let eval2 = repl.eval("return 2").await.unwrap();
-        let eval3 = repl.eval("return 3").await.unwrap();
-
-        assert_eq!(eval1.result.unwrap()[0], "1");
-        assert_eq!(eval2.result.unwrap()[0], "2");
-        assert_eq!(eval3.result.unwrap()[0], "3");
     }
 }

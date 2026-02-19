@@ -42,7 +42,7 @@ let tool_calls = chat_res.into_tool_calls();
 
 // 5. Execute the code
 let source_code = &tool_calls[0].fn_arguments["source_code"];
-let response = repl.eval(source_code).await?;
+let response = repl.eval(source_code)?;
 
 // 6. Send results back to LLM
 let tool_response = ToolResponse::new(
@@ -167,7 +167,6 @@ let tool = tool_definition::genai_tool();
 
 **For Developers:**
 - Drop-in integration with genai library
-- Async/await support
 - Separate `print()` output from return values
 - Clear error messages
 - Type-safe Rust API via mlua

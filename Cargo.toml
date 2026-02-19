@@ -6,7 +6,7 @@ license = "MIT"
 description = "The last LLM tool you'll every need"
 
 [dependencies]
-mlua = { version = "0.11.5", features = ["lua54", "async", "vendored"] }
+mlua = { version = "0.11.5", features = ["lua54", "vendored"] }
 tracing = "0.1"
 serde_json = { version = "1.0.149", optional = true }
 genai = { version = "0.5.3", optional = true }
