@@ -8,11 +8,11 @@ use crate::tool_definition;
 use serde_json::json;
 use std::collections::HashMap;
 
-pub struct Tool<'a> {
+pub struct LuaRepl<'a> {
     repl: &'a repl::Repl,
 }
 
-impl<'a> Tool<'a> {
+impl<'a> LuaRepl<'a> {
     pub fn new(repl: &'a repl::Repl) -> Self {
         Self { repl }
     }
@@ -43,7 +43,7 @@ impl<'a> Tool<'a> {
     /// Returns JSON string with format:
     /// - Success: `{"output": "...", "result": "..."}`
     /// - Error: `{"error": "..."}`
-    pub fn call_tool(&self, tool_call: &mistralrs::ToolCallResponse) -> String {
+    pub fn call(&self, tool_call: &mistralrs::ToolCallResponse) -> String {
         // 1. Validate tool name
         if tool_call.function.name != tool_definition::NAME {
             return json!({

@@ -15,12 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let genai_client = genai::Client::default();
 
     // Create the tool orchestrator for easier tool handling
-    let one_tool = onetool::genai::Tool::new(&repl);
+    let lua_repl = onetool::genai::LuaRepl::new(&repl);
 
     let chat_req = genai::chat::ChatRequest::new(vec![genai::chat::ChatMessage::user(
         "What's the sum of the 10 first prime numbers?",
     )])
-    .with_tools(vec![one_tool.definition()]);
+    .with_tools(vec![lua_repl.definition()]);
 
     println!("--- Getting function call from model");
     let chat_res = genai_client
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Use the orchestrator to handle the tool call
-    let tool_response = one_tool.call_tool(&tool_calls[0]);
+    let tool_response = lua_repl.call(&tool_calls[0]);
 
     let chat_req = chat_req
         .append_message(tool_calls)

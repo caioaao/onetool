@@ -8,11 +8,11 @@ use crate::repl;
 use crate::tool_definition;
 use serde_json::json;
 
-pub struct Tool<'a> {
+pub struct LuaRepl<'a> {
     repl: &'a repl::Repl,
 }
 
-impl<'a> Tool<'a> {
+impl<'a> LuaRepl<'a> {
     pub fn new(repl: &'a repl::Repl) -> Self {
         Self { repl }
     }
@@ -33,19 +33,19 @@ impl<'a> Tool<'a> {
     ///
     /// ```no_run
     /// use std::sync::Arc;
-    /// use onetool::{Repl, genai::Tool};
+    /// use onetool::{Repl, genai::LuaRepl};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let repl = Repl::new()?;
-    /// let tool = Tool::new(&repl);
+    /// let lua_repl = LuaRepl::new(&repl);
     ///
     /// // Tool call would come from LLM client
     /// // let tool_call = ...;
-    /// // let response = tool.call_tool(&tool_call);
+    /// // let response = lua_repl.call(&tool_call);
     /// # Ok(())
     /// # }
     /// ```
-    pub fn call_tool(&self, tool_call: &genai::chat::ToolCall) -> genai::chat::ToolResponse {
+    pub fn call(&self, tool_call: &genai::chat::ToolCall) -> genai::chat::ToolResponse {
         // 1. Validate tool name
         if tool_call.fn_name != tool_definition::NAME {
             return Self::build_error_response(

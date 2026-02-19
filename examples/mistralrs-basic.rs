@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
     let repl = onetool::Repl::new().map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Create the tool wrapper for mistralrs
-    let one_tool = onetool::mistralrs::Tool::new(&repl);
+    let lua_repl = onetool::mistralrs::LuaRepl::new(&repl);
 
     // Build the mistralrs model
     let model = TextModelBuilder::new(MODEL)
@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
             TextMessageRole::User,
             "What's the sum of the 10 first prime numbers?",
         )
-        .set_tools(vec![one_tool.definition()])
+        .set_tools(vec![lua_repl.definition()])
         .set_tool_choice(ToolChoice::Auto);
 
     println!("--- Getting function call from model");
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
 
         // Execute the tool call
         let called = &tool_calls[0];
-        let result = one_tool.call_tool(called);
+        let result = lua_repl.call(called);
 
         println!("\n--- Tool result:");
         println!("{}", result);
