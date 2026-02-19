@@ -55,3 +55,6 @@ pub mod mistralrs;
 
 #[cfg(feature = "rig")]
 pub mod rig;
+
+#[cfg(feature = "aisdk")]
+pub mod aisdk;
