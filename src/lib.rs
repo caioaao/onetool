@@ -58,3 +58,6 @@ pub mod rig;
 
 #[cfg(feature = "aisdk")]
 pub mod aisdk;
+
+#[cfg(feature = "mcp")]
+pub mod mcp;
