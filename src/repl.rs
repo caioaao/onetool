@@ -356,6 +356,13 @@ mod tests {
         );
     }
 
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn repl_is_send_sync() {
+        assert_send_sync::<Repl>();
+    }
+
     // === A. Initialization Tests ===
 
     #[test]
