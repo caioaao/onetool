@@ -35,11 +35,13 @@ impl From<mlua::Error> for ReplError {
 ///
 /// # Thread Safety
 ///
-/// The Lua runtime is wrapped in a `Mutex` to make `Repl` `Send`, allowing it to
-/// be moved between threads. However, the underlying Lua VM is NOT thread-safe
-/// (`!Sync`), so you cannot call methods on the same `Repl` from multiple threads
-/// concurrently. The mutex only enables moving the REPL across thread boundaries
-/// (e.g., in async contexts), not parallel access.
+/// `Repl` is `Send + Sync` and can be safely shared across threads. The Lua runtime
+/// is wrapped in a `Mutex` to provide interior mutability and thread-safe concurrent
+/// access. This is enabled by mlua's `send` feature flag, which makes the underlying
+/// Lua VM thread-safe.
+///
+/// You can safely call methods on the same `Repl` from multiple threads. The mutex
+/// ensures that evaluations are serialized and state remains consistent.
 ///
 /// # Example
 ///
@@ -193,9 +195,9 @@ impl Repl {
     ///
     /// # Note on Thread Safety
     ///
-    /// While this method uses a Mutex, the underlying Lua VM is NOT thread-safe.
-    /// The Mutex only ensures `Repl` can be sent between threads; you cannot
-    /// call Lua operations from multiple threads concurrently.
+    /// The Lua VM is thread-safe (enabled by mlua's `send` feature). The Mutex
+    /// provides interior mutability and ensures thread-safe concurrent access.
+    /// Multiple threads can safely call this method on the same `Repl` instance.
     ///
     /// # Parameters
     ///
