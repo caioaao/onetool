@@ -2,21 +2,53 @@
 //!
 //! This is a convenience module for users of the `mistralrs` crate.
 //! Requires the `mistralrs` feature to be enabled.
+//!
+//! # Usage
+//!
+//! Create a `LuaRepl` tool by passing a `Repl` instance:
+//!
+//! ```no_run
+//! use onetool::{Repl, mistralrs::LuaRepl};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let repl = Repl::new()?;
+//! let lua_repl = LuaRepl::new(repl);
+//!
+//! // Use with mistralrs
+//! let tool_def = lua_repl.definition();
+//! // ... use in model requests
+//! # Ok(())
+//! # }
+//! ```
 
 use crate::repl;
 use crate::tool_definition;
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub struct LuaRepl<'a> {
-    repl: &'a repl::Repl,
+/// A mistralrs tool implementation for the Lua REPL.
+///
+/// The tool maintains a reference to a shared `Repl` instance, preserving Lua state
+/// across tool invocations.
+#[derive(Clone)]
+pub struct LuaRepl {
+    repl: Arc<repl::Repl>,
 }
 
-impl<'a> LuaRepl<'a> {
-    pub fn new(repl: &'a repl::Repl) -> Self {
-        Self { repl }
+impl LuaRepl {
+    /// Creates a new LuaRepl tool with the given Repl instance.
+    ///
+    /// The Repl is wrapped in an Arc, allowing the tool to be cloned while sharing
+    /// the same underlying Lua runtime state.
+    pub fn new(repl: repl::Repl) -> Self {
+        Self {
+            repl: Arc::new(repl),
+        }
     }
+}
 
+impl LuaRepl {
     /// Returns mistralrs::Tool definition for the Lua REPL
     pub fn definition(&self) -> mistralrs::Tool {
         // Parse json_schema() into HashMap<String, serde_json::Value>

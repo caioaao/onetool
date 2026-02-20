@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
     let repl = onetool::Repl::new().map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Create the tool wrapper for mistralrs
-    let lua_repl = onetool::mistralrs::LuaRepl::new(&repl);
+    let lua_repl = onetool::mistralrs::LuaRepl::new(repl);
 
     // Build the mistralrs model
     let model = TextModelBuilder::new(MODEL)

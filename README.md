@@ -60,9 +60,9 @@ let result = repl.eval("return x + y")?; // "30"
 onetool provides ready-to-use adapters for popular LLM frameworks:
 
 - **[genai](#genai-adapter)** - `LuaRepl::new(&repl)` with `definition()` and `call()` methods
-- **[mistralrs](#mistralrs-adapter)** - `LuaRepl::new(&repl)` with `definition()` and `call()` methods
-- **[rig](#rig-adapter)** - Implements `Tool` trait (requires `set_repl()` first)
-- **[aisdk](#aisdk-adapter)** - Uses `#[tool]` macro (requires `set_repl()` first)
+- **[mistralrs](#mistralrs-adapter)** - `LuaRepl::new(repl)` with `definition()` and `call()` methods
+- **[rig](#rig-adapter)** - `LuaRepl::new(repl)` implements `Tool` trait
+- **[aisdk](#aisdk-adapter)** - `LuaRepl::new(repl)` with `.tool()` method
 
 Each adapter handles tool definition registration and execution for its framework. See [Framework Integration](#framework-integration) for detailed usage.
 
@@ -150,7 +150,7 @@ let tool_response = lua_repl.call(&tool_calls[0]);
 The mistralrs adapter integrates with [mistral.rs](https://github.com/EricLBuehler/mistral.rs) for fast local model inference.
 
 **Key Methods:**
-- `LuaRepl::new(&repl)` - Creates the adapter
+- `LuaRepl::new(repl)` - Creates the adapter
 - `.definition()` - Returns `mistralrs::Tool` for registration
 - `.call(&tool_call)` - Executes tool call and returns result string
 
@@ -160,7 +160,7 @@ The mistralrs adapter integrates with [mistral.rs](https://github.com/EricLBuehl
 use onetool::{Repl, mistralrs::LuaRepl};
 
 let repl = Repl::new()?;
-let lua_repl = LuaRepl::new(&repl);
+let lua_repl = LuaRepl::new(repl);
 
 // Register with mistralrs model
 let messages = RequestBuilder::new()
@@ -181,21 +181,16 @@ let result = lua_repl.call(&tool_calls[0]);
 
 The rig adapter implements the `Tool` trait from [rig-core](https://github.com/0xPlaygrounds/rig).
 
-**Important:** You must call `onetool::rig::set_repl()` before creating the tool, as rig requires tools to be `Sync`.
-
 **Key Methods:**
-- `onetool::rig::set_repl(repl)` - Initialize global REPL (call once)
-- `LuaRepl::new()` - Creates the tool (implements `Tool` trait)
+- `LuaRepl::new(repl)` - Creates the tool (implements `Tool` trait)
 
 **Example:**
 
 ```rust
-use onetool::{Repl, rig::{set_repl, LuaRepl}};
+use onetool::{Repl, rig::LuaRepl};
 
 let repl = Repl::new()?;
-set_repl(repl);  // Must be called first!
-
-let lua_tool = LuaRepl::new();
+let lua_tool = LuaRepl::new(repl);
 
 // Use with rig agents
 let agent = client
@@ -212,27 +207,25 @@ let agent = client
 
 **Feature flag:** `aisdk`
 
-The aisdk adapter uses the `#[tool]` macro from [aisdk](https://github.com/lazy-hq/aisdk).
+The aisdk adapter provides integration with [aisdk](https://github.com/lazy-hq/aisdk).
 
-**Important:** You must call `onetool::aisdk::set_repl()` before using the tool, as the macro generates a function-based tool.
-
-**Key Functions:**
-- `onetool::aisdk::set_repl(repl)` - Initialize global REPL (call once)
-- `onetool::aisdk::lua_repl()` - Returns the tool function
+**Key Methods:**
+- `LuaRepl::new(repl)` - Creates the adapter
+- `.tool()` - Returns a tool function for use with aisdk
 
 **Example:**
 
 ```rust
-use onetool::{Repl, aisdk};
+use onetool::{Repl, aisdk::LuaRepl};
 
 let repl = Repl::new()?;
-aisdk::set_repl(repl);  // Must be called first!
+let lua_repl = LuaRepl::new(repl);
 
 // Use with aisdk
 let result = LanguageModelRequest::builder()
     .model(OpenAI::gpt_4o())
     .prompt("Calculate something")
-    .with_tool(aisdk::lua_repl())
+    .with_tool(lua_repl.tool())
     .build()
     .generate_text()
     .await?;

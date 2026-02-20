@@ -17,9 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let repl = onetool::Repl::new().map_err(|e| e.to_string())?;
-    onetool::rig::set_repl(repl);
-
-    let lua_tool = onetool::rig::LuaRepl::new();
+    let lua_tool = onetool::rig::LuaRepl::new(repl);
 
     let client = openai::Client::from_env();
     let agent = client

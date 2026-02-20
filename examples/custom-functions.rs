@@ -5,11 +5,11 @@
 //!
 //! Run with: cargo run --example custom-functions
 
-use onetool::{runtime, Repl};
+use onetool::{Repl, runtime};
 use regex::Regex;
 use sha2::{Digest, Sha256};
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 // ============================================================================
 // Section 1: Helper Functions
@@ -88,9 +88,8 @@ fn example_with_runtime() -> Result<(), Box<dyn std::error::Error>> {
 
             // Increment function
             let c1 = Arc::clone(&counter);
-            let inc = lua.create_function(move |_, ()| {
-                Ok(c1.fetch_add(1, Ordering::SeqCst) + 1)
-            })?;
+            let inc =
+                lua.create_function(move |_, ()| Ok(c1.fetch_add(1, Ordering::SeqCst) + 1))?;
             module.set("increment", inc)?;
 
             // Get current value
@@ -114,7 +113,7 @@ fn example_with_runtime() -> Result<(), Box<dyn std::error::Error>> {
 
     // 5. Register documentation
     repl.with_runtime(|lua| {
-        use onetool::runtime::docs::{register, LuaDoc, LuaDocTyp};
+        use onetool::runtime::docs::{LuaDoc, LuaDocTyp, register};
 
         register(
             lua,
@@ -212,7 +211,7 @@ fn example_new_with() -> Result<(), Box<dyn std::error::Error>> {
 
     // Register documentation
     {
-        use onetool::runtime::docs::{register, LuaDoc, LuaDocTyp};
+        use onetool::runtime::docs::{LuaDoc, LuaDocTyp, register};
 
         register(
             &lua,
@@ -438,9 +437,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let module = lua.create_table()?;
 
             let c1 = Arc::clone(&counter);
-            let inc = lua.create_function(move |_, ()| {
-                Ok(c1.fetch_add(1, Ordering::SeqCst) + 1)
-            })?;
+            let inc =
+                lua.create_function(move |_, ()| Ok(c1.fetch_add(1, Ordering::SeqCst) + 1))?;
             module.set("increment", inc)?;
 
             let c2 = Arc::clone(&counter);
@@ -461,7 +459,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Register documentation
     repl.with_runtime(|lua| {
-        use onetool::runtime::docs::{register, LuaDoc, LuaDocTyp};
+        use onetool::runtime::docs::{LuaDoc, LuaDocTyp, register};
 
         register(
             lua,

@@ -1,120 +1,111 @@
 //! Utilities for defining and running the tool using [aisdk](https://github.com/lazy-hq/aisdk)
 //!
-//! This module provides an aisdk tool implementation for the Lua REPL using the `#[tool]` macro.
+//! This module provides an aisdk tool implementation for the Lua REPL.
 //! Requires the `aisdk` feature to be enabled.
 //!
 //! # Usage
 //!
-//! Due to aisdk's requirement for function-based tools, this module uses a global
-//! mutex-protected REPL instance. You must call `set_repl()` before using the tool:
+//! Create a `LuaRepl` tool by passing a `Repl` instance:
 //!
 //! ```no_run
-//! use onetool::{Repl, aisdk};
+//! use onetool::{Repl, aisdk::LuaRepl};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let repl = Repl::new()?;
-//! aisdk::set_repl(repl);
+//! let lua_repl = LuaRepl::new(repl);
 //!
-//! // Now you can use lua_repl() as a tool
-//! // let result = aisdk::lua_repl("return 1 + 1".to_string()).await?;
+//! // Use with aisdk
+//! // let result = LanguageModelRequest::builder()
+//! //     .with_tool(lua_repl.tool())
+//! //     ...
 //! # Ok(())
 //! # }
 //! ```
 
 use crate::repl;
-use aisdk::macros::tool;
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use serde_json::Value;
+use std::sync::Arc;
 
-static REPL: Lazy<Mutex<Option<repl::Repl>>> = Lazy::new(|| Mutex::new(None));
-
-/// Sets the global REPL instance used by the lua_repl tool.
+/// An aisdk tool implementation for the Lua REPL.
 ///
-/// This must be called before using the lua_repl tool. Can only be called once.
-///
-/// # Panics
-///
-/// Panics if the mutex is poisoned.
-pub fn set_repl(repl: repl::Repl) {
-    let mut guard = REPL.lock().expect("REPL mutex poisoned");
-    *guard = Some(repl);
+/// The tool maintains a reference to a shared `Repl` instance, preserving Lua state
+/// across tool invocations.
+#[derive(Clone)]
+pub struct LuaRepl {
+    repl: Arc<repl::Repl>,
 }
 
-/// Gets a reference to the global REPL instance for evaluation.
-///
-/// Returns None if the REPL hasn't been initialized yet.
-fn with_repl<F, R>(f: F) -> Option<R>
-where
-    F: FnOnce(&repl::Repl) -> R,
-{
-    let guard = REPL.lock().expect("REPL mutex poisoned");
-    guard.as_ref().map(f)
-}
-
-#[tool]
-/// Execute Lua code in a long-lived sandboxed REPL environment.
-///
-/// **Capabilities:**
-/// - Expression evaluation with return values
-/// - print() output capture (appears in tool response)
-/// - Persistent state between executions (variables, functions, tables)
-/// - Safe operations: string, table, math, utf8, os.time, os.date
-/// - Documentation: available via global `docs` variable
-///
-/// **Restrictions:**
-/// - No file I/O or network access
-/// - No OS command execution
-/// - No code loading (require, load, loadfile)
-/// - No dangerous metatable operations
-///
-/// **Environment:**
-/// - Sandboxed Lua 5.4
-///
-/// **Example:**
-/// ```lua
-/// x = 10
-/// y = 20
-/// print("Sum:", x + y)
-/// return x + y
-/// ```
-pub fn lua_repl(source_code: String) -> aisdk::core::Tool {
-    let result = with_repl(|repl| repl.eval(&source_code));
-
-    let eval_outcome = match result {
-        Some(Ok(outcome)) => outcome,
-        Some(Err(err)) => {
-            return Err(format!("REPL evaluation failed: {}", err));
+impl LuaRepl {
+    /// Creates a new LuaRepl tool with the given Repl instance.
+    ///
+    /// The Repl is wrapped in an Arc, allowing the tool to be cloned while sharing
+    /// the same underlying Lua runtime state.
+    pub fn new(repl: repl::Repl) -> Self {
+        Self {
+            repl: Arc::new(repl),
         }
-        None => {
-            return Err("REPL not initialized. Call onetool::aisdk::set_repl() first.".to_string());
-        }
-    };
+    }
 
-    // Format response as JSON-like string
-    let output = eval_outcome.output.join("");
-    let result = match eval_outcome.result {
-        Ok(values) => {
-            if values.is_empty() {
-                String::new()
+    /// Returns a tool that can be used with aisdk's `.with_tool()`.
+    ///
+    /// The returned tool captures the Repl instance and executes Lua code
+    /// when called by the language model.
+    pub fn tool(&self) -> aisdk::core::Tool {
+        use aisdk::core::{Tool, tools::ToolExecute};
+        use crate::tool_definition;
+
+        let repl = Arc::clone(&self.repl);
+        let execute_fn = Box::new(move |args: Value| -> Result<String, String> {
+            // Extract source_code from JSON args
+            let source_code = match args.get("source_code") {
+                Some(Value::String(s)) => s.clone(),
+                _ => {
+                    return Err("Missing or invalid 'source_code' parameter".to_string());
+                }
+            };
+
+            let eval_outcome = match repl.eval(&source_code) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    return Err(format!("REPL evaluation failed: {}", err));
+                }
+            };
+
+            // Format response
+            let output = eval_outcome.output.join("");
+            let result = match eval_outcome.result {
+                Ok(values) => {
+                    if values.is_empty() {
+                        String::new()
+                    } else {
+                        values.join("\n")
+                    }
+                }
+                Err(err) => format!("error: {}", err),
+            };
+
+            // Return formatted output
+            if output.is_empty() && result.is_empty() {
+                Ok("(no output or result)".to_string())
+            } else if output.is_empty() {
+                Ok(format!("Result: {}", result))
+            } else if result.is_empty() {
+                Ok(format!("Output: {}", output.trim_end()))
             } else {
-                values.join("\n")
+                Ok(format!("Output: {}\nResult: {}", output.trim_end(), result))
             }
-        }
-        Err(err) => format!("error: {}", err),
-    };
+        });
 
-    // Return formatted output
-    if output.is_empty() && result.is_empty() {
-        Ok("(no output or result)".to_string())
-    } else if output.is_empty() {
-        Ok(format!("Result: {}", result))
-    } else if result.is_empty() {
-        Ok(format!("Output: {}", output.trim_end()))
-    } else {
-        Ok(format!(
-            "Output: {}\nResult: {}",
-            output.trim_end(),
-            result
-        ))
+        // Convert JSON schema to schemars::Schema
+        let schema_json = tool_definition::json_schema();
+        let input_schema: schemars::Schema = serde_json::from_value(schema_json)
+            .expect("Failed to convert JSON schema to schemars::Schema");
+
+        Tool {
+            name: tool_definition::NAME.to_string(),
+            description: tool_definition::DESCRIPTION.to_string(),
+            input_schema,
+            execute: ToolExecute::new(execute_fn),
+        }
     }
 }

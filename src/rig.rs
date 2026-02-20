@@ -5,17 +5,15 @@
 //!
 //! # Usage
 //!
-//! Due to rig-core's requirement that Tools be `Sync`, this module uses a global
-//! mutex-protected REPL instance. You must call `set_repl()` before using the tool:
+//! Create a `LuaRepl` tool by passing a `Repl` instance. The tool can be cloned and
+//! shared across rig agents while maintaining persistent Lua state:
 //!
 //! ```no_run
 //! use onetool::{Repl, rig};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let repl = Repl::new()?;
-//! rig::set_repl(repl);
-//!
-//! let lua_tool = rig::LuaRepl::new();
+//! let lua_tool = rig::LuaRepl::new(repl);
 //! // Use lua_tool with rig agents...
 //! # Ok(())
 //! # }
@@ -23,36 +21,10 @@
 
 use crate::repl;
 use crate::tool_definition;
-use once_cell::sync::Lazy;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
-
-static REPL: Lazy<Mutex<Option<repl::Repl>>> = Lazy::new(|| Mutex::new(None));
-
-/// Sets the global REPL instance used by LuaRepl tools.
-///
-/// This must be called before creating any LuaRepl tools. Can only be called once.
-///
-/// # Panics
-///
-/// Panics if the mutex is poisoned.
-pub fn set_repl(repl: repl::Repl) {
-    let mut guard = REPL.lock().expect("REPL mutex poisoned");
-    *guard = Some(repl);
-}
-
-/// Gets a reference to the global REPL instance for evaluation.
-///
-/// Returns None if the REPL hasn't been initialized yet.
-fn with_repl<F, R>(f: F) -> Option<R>
-where
-    F: FnOnce(&repl::Repl) -> R,
-{
-    let guard = REPL.lock().expect("REPL mutex poisoned");
-    guard.as_ref().map(f)
-}
+use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct LuaReplArgs {
@@ -67,20 +39,22 @@ pub struct LuaReplOutput {
 
 /// A rig-core Tool implementation for the Lua REPL.
 ///
-/// This tool is stateless and Sync-safe. It accesses the global REPL instance
-/// set via `set_repl()`.
+/// The tool maintains a reference to a shared `Repl` instance, preserving Lua state
+/// across tool invocations. Multiple clones of this tool will share the same Repl.
 #[derive(Clone)]
-pub struct LuaRepl;
-
-impl LuaRepl {
-    pub fn new() -> Self {
-        Self
-    }
+pub struct LuaRepl {
+    repl: Arc<repl::Repl>,
 }
 
-impl Default for LuaRepl {
-    fn default() -> Self {
-        Self::new()
+impl LuaRepl {
+    /// Creates a new LuaRepl tool with the given Repl instance.
+    ///
+    /// The Repl is wrapped in an Arc, allowing the tool to be cloned while sharing
+    /// the same underlying Lua runtime state.
+    pub fn new(repl: repl::Repl) -> Self {
+        Self {
+            repl: Arc::new(repl),
+        }
     }
 }
 
@@ -100,21 +74,12 @@ impl Tool for LuaRepl {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let result = with_repl(|repl| repl.eval(&args.source_code));
-
-        let eval_outcome = match result {
-            Some(Ok(outcome)) => outcome,
-            Some(Err(err)) => {
+        let eval_outcome = match self.repl.eval(&args.source_code) {
+            Ok(outcome) => outcome,
+            Err(err) => {
                 return Ok(LuaReplOutput {
                     output: String::new(),
                     result: format!("error: REPL evaluation failed: {}", err),
-                });
-            }
-            None => {
-                return Ok(LuaReplOutput {
-                    output: String::new(),
-                    result: "error: REPL not initialized. Call onetool::rig::set_repl() first."
-                        .to_string(),
                 });
             }
         };
