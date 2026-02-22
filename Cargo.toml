@@ -68,3 +68,8 @@ required-features = ["mcp"]
 [[example]]
 name = "custom-functions"
 path = "examples/custom-functions.rs"
+
+[[example]]
+name = "needle-in-haystack"
+path = "examples/needle-in-haystack.rs"
+required-features = ["genai"]
