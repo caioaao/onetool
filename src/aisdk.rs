@@ -51,8 +51,8 @@ impl LuaRepl {
     /// The returned tool captures the Repl instance and executes Lua code
     /// when called by the language model.
     pub fn tool(&self) -> aisdk::core::Tool {
-        use aisdk::core::{Tool, tools::ToolExecute};
         use crate::tool_definition;
+        use aisdk::core::{Tool, tools::ToolExecute};
 
         let repl = Arc::clone(&self.repl);
         let execute_fn = Box::new(move |args: Value| -> Result<String, String> {

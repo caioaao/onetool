@@ -26,9 +26,10 @@ use crate::tool_definition;
 use rmcp::schemars;
 use rmcp::schemars::JsonSchema;
 use rmcp::{
+    Json, ServerHandler, ServiceExt,
     handler::server::{tool::ToolRouter, wrapper::Parameters},
     model::{ErrorCode, ErrorData as McpError, ServerCapabilities, ServerInfo},
-    tool, tool_handler, tool_router, Json, ServerHandler, ServiceExt,
+    tool, tool_handler, tool_router,
 };
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -133,7 +134,6 @@ impl LuaReplServer {
         }
     }
 }
-
 
 #[tool_handler]
 impl ServerHandler for LuaReplServer {
