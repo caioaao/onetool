@@ -9,39 +9,44 @@ pub const NAME: &str = "lua_repl";
 /// Comprehensive tool description for LLM context.
 pub const DESCRIPTION: &str = r#"Execute Lua code in a long-lived sandboxed REPL environment.
 
-**Capabilities:**
-- Expression evaluation with return values
-- print() output capture (appears in tool response)
-- Persistent state between executions (variables, functions, tables)
-- Safe operations: string, table, math, utf8, os.time, os.date
-- Documentation: available via global `docs` variable
-
-**Restrictions:**
-- No file I/O or network access
-- No OS command execution
-- No code loading (require, load, loadfile)
-- No dangerous metatable operations
+**IMPORTANT:** Provide ONLY valid Lua code as input. Do NOT wrap code in markdown blocks.
 
 **Environment:**
-- Sandboxed Lua 5.4
+- Sandboxed Lua 5.4 with persistent state between calls
+- Global variables (assigned without `local`) persist across calls
+- Local variables (`local x = ...`) are lost between calls
+- Custom global variables may be injected by the application (check what's available!)
 
-**Input:**
-- source_code: Lua code to execute
+**Available Operations:**
+- Full string library (string.sub, string.find, string.match, string.gsub, string.gmatch, etc.)
+- Full table library (table.insert, table.concat, table.remove, table.sort, etc.)
+- Full math library (math.min, math.max, math.floor, math.ceil, math.abs, math.sqrt, etc.)
+- UTF-8 support (utf8.*)
+- Core functions: type(), tonumber(), tostring(), pairs(), ipairs(), select(), assert(), error(), pcall(), xpcall()
+- Output: print() (captured in tool response)
+- Time: os.time(), os.date()
+- Docs: `docs` global contains documentation for custom functions
 
-**Output:**
-- result: Expression evaluation result (array of strings) or error message
-- output: Lines from print() calls (array of strings)
+**Restrictions:**
+- No file I/O, network access, or OS commands
+- No require(), load(), loadfile(), or dofile()
+- No metatable manipulation (rawset, setmetatable, etc.)
 
-**Example Usage:**
-```lua
--- Calculate and print
+**Pattern Matching:**
+Lua patterns (NOT regex): `.` (any char), `%d` (digit), `%a` (letter), `%s` (space), `+` (1 or more), `*` (0 or more)
+Example: string.match(text, "number is (%d+)") -- captures digits after "number is "
+
+**Usage:**
+- Use print() to output intermediate values for debugging
+- Use return to provide final results
+- Access any global variables that have been set by the application
+- Leverage Lua for data processing - it's fast and efficient even on large strings
+
+**Example:**
 x = 10
 y = 20
-print("Sum:", x + y)
+print("Computing sum...")
 return x + y
--- Result: ["30"]
--- Output: ["Sum:\t10\t20\n"]
-```
 "#;
 
 /// Parameter name for the source code input.
