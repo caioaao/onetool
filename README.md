@@ -316,34 +316,34 @@ let tool = tool_definition::genai_tool();
 **Basic REPL only** (no LLM framework):
 ```toml
 [dependencies]
-onetool = "0.0.1-alpha.4"
+onetool = "0.0.1-alpha.5"
 ```
 
 **With genai:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.4", features = ["genai"] }
+onetool = { version = "0.0.1-alpha.5", features = ["genai"] }
 genai = "0.5"
 ```
 
 **With mistralrs:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.4", features = ["mistralrs"] }
+onetool = { version = "0.0.1-alpha.5", features = ["mistralrs"] }
 mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git" }
 ```
 
 **With rig:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.4", features = ["rig"] }
+onetool = { version = "0.0.1-alpha.5", features = ["rig"] }
 rig-core = "0.3"
 ```
 
 **With aisdk:**
 ```toml
 [dependencies]
-onetool = { version = "0.0.1-alpha.4", features = ["aisdk"] }
+onetool = { version = "0.0.1-alpha.5", features = ["aisdk"] }
 aisdk = "0.2"
 ```
 
@@ -533,7 +533,7 @@ Lua checks all these boxes. It's widespread enough (neovim config language, game
 
 **This is still a toy project.** Use with care - everything may break, and I might decide to change everything tomorrow.
 
-- **Version**: 0.0.1-alpha.4
+- **Version**: 0.0.1-alpha.5
 - **API Stability**: Expect breaking changes
 - **Production Ready**: No
 
