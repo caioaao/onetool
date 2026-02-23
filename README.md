@@ -1,22 +1,23 @@
 # onetool
 
-**The last LLM tool you'll need.**
+**Sandboxed Lua runtime for LLM tool use.**
 
 ## The Problem
 
-LLM agents typically get dozens of specialized tools:
-- A calculator for arithmetic
-- A date formatter for timestamps
-- A string manipulator for text operations
-- A JSON parser, a base64 encoder, a hash generator...
+LLM agents typically need dozens of specialized tools (calculator, date formatter, string manipulator, JSON parser, base64 encoder, hash generator, etc.). This creates two problems:
 
-Each tool requires API design, documentation, and testing. Tools don't compose well. And you're always limited by what tools you thought to create.
+1. **Token costs add up**: Each tool call requires a round-trip to the LLM provider. Complex tasks need multiple calls, and you pay for every token exchanged.
+2. **Tool proliferation**: Each new tool requires API design, documentation, and testing. Tools don't compose well. And you're always limited by what you thought to create.
+
+What if the LLM could solve problems programmatically instead of making multiple tool calls? We already have the perfect interface for that: programming languages.
 
 ## The Solution
 
-**onetool provides one universal computation tool** powered by a sandboxed Lua runtime.
+**onetool provides a sandboxed Lua REPL** that LLMs can use as a tool.
 
-Instead of hunting for the right tool, your LLM can solve problems programmatically. State persists between calls for multi-step reasoning. It's safe by design with comprehensive sandboxing. And it integrates seamlessly with major LLM libraries.
+LLMs are already trained on programming languages. By giving them code execution instead of specialized tools, you reduce token costs (one tool call instead of many) while increasing flexibility. State persists between calls for multi-step reasoning. It's safe by design with comprehensive sandboxing.
+
+**Prior art:** Cloudflare and Anthropic have explored similar approaches with their [Code Mode](https://blog.cloudflare.com/code-mode/) and [MCP code execution](https://www.anthropic.com/engineering/code-execution-with-mcp) respectively.
 
 ## Framework Support
 
@@ -293,7 +294,7 @@ let tool = tool_definition::genai_tool();
 ## Key Features
 
 **For LLM Integration:**
-- Universal computation tool (replaces dozens of specialized tools)
+- Code execution as a single tool (reduces need for specialized tools)
 - Built-in tool definitions (OpenAI, Google, Anthropic compatible)
 - JSON Schema generation
 - Comprehensive documentation in tool description
@@ -511,24 +512,32 @@ Full API documentation available at [docs.rs/onetool](https://docs.rs/onetool).
 
 ## Why Lua?
 
-- **Lightweight**: Small runtime, fast startup
-- **Embeddable**: Designed from the ground up to be embedded in host applications
-- **Simple**: Easy for LLMs to generate correct code
-- **Powerful**: Full programming language, not a domain-specific language
-- **Safe**: Straightforward to sandbox effectively
+These were the criteria for choosing the execution language:
+
+- **Interpreted**: We can't depend on a compile-eval loop
+- **Easy to embed**: The runtime needs to live inside the host application
+- **Easy to sandbox**: Giving too much power to an LLM can be dangerous
+- **Simple and expressive**: LLMs need to write small, correct snippets
+- **Strong standard library**: Especially for string manipulation
+- **Mature and well-known**: Editor plugins, documentation, familiarity
+
+Lua checks all these boxes. It's widespread enough (neovim config language, game scripting) that LLMs are well-trained on it.
 
 ## Use Cases
 
-**Perfect for:**
 - LLM agents that need computation capabilities
 - AI assistants with multi-step reasoning
 - Applications requiring safe user-generated code execution
 
 ## Project Status
 
+**This is still a toy project.** Use with care - everything may break, and I might decide to change everything tomorrow.
+
 - **Version**: 0.0.1-alpha.4
-- **Stability**: Alpha - API may change, but core concept is stable
-- **Production Ready**: Not yet - use at your own risk
+- **API Stability**: Expect breaking changes
+- **Production Ready**: No
+
+The core concept is stable (sandboxed Lua REPL for LLMs), but the implementation and API surface are experimental.
 
 ## Development
 
