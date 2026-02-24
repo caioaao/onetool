@@ -47,6 +47,11 @@ x = 10
 y = 20
 print("Computing sum...")
 return x + y
+
+**Output Truncation:**
+- Output and result are automatically truncated to 50,000 characters by default
+- Truncated values end with "...\n(output truncated)"
+- This prevents extremely large outputs from overwhelming the conversation context
 "#;
 
 /// Parameter name for the source code input.

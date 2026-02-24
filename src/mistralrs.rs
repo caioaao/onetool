@@ -3,6 +3,9 @@
 //! This is a convenience module for users of the `mistralrs` crate.
 //! Requires the `mistralrs` feature to be enabled.
 //!
+//! This adapter provides output truncation to prevent large outputs from bloating the LLM's context window.
+//! By default, both `output` (from `print()`) and `result` (from `return`) are truncated to 50,000 characters.
+//!
 //! # Usage
 //!
 //! Create a `LuaRepl` tool by passing a `Repl` instance:
@@ -23,9 +26,22 @@
 
 use crate::repl;
 use crate::tool_definition;
+use crate::utils;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Configuration options for the Lua REPL tool.
+///
+/// Controls output truncation to prevent extremely large outputs from overwhelming
+/// the LLM's context window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LuaReplOptions {
+    /// Maximum length of output and result strings before truncation (default: 50,000)
+    ///
+    /// When truncated, the string will end with "...\n(output truncated)"
+    pub max_output_len: usize,
+}
 
 /// A mistralrs tool implementation for the Lua REPL.
 ///
@@ -34,16 +50,29 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct LuaRepl {
     repl: Arc<repl::Repl>,
+    options: LuaReplOptions,
 }
 
 impl LuaRepl {
-    /// Creates a new LuaRepl tool with the given Repl instance.
+    const DEFAULT_OPTIONS: LuaReplOptions = LuaReplOptions {
+        max_output_len: 50_000,
+    };
+
+    /// Creates a new LuaRepl tool with default options (50,000 character truncation limit).
     ///
     /// The Repl is wrapped in an Arc, allowing the tool to be cloned while sharing
     /// the same underlying Lua runtime state.
     pub fn new(repl: repl::Repl) -> Self {
+        Self::new_with(repl, Self::DEFAULT_OPTIONS)
+    }
+
+    /// Creates a new LuaRepl tool with custom options.
+    ///
+    /// Use this to configure custom truncation limits or other options.
+    pub fn new_with(repl: repl::Repl, options: LuaReplOptions) -> Self {
         Self {
             repl: Arc::new(repl),
+            options,
         }
     }
 }
@@ -71,6 +100,9 @@ impl LuaRepl {
     /// This method validates the tool call, extracts parameters, evaluates Lua code,
     /// and returns a formatted result string. The result is suitable for use with
     /// `.add_tool_message(result, call_id)`.
+    ///
+    /// **Note:** Both `output` and `result` are automatically truncated according to the
+    /// configured `max_output_len` option to prevent context window overflow.
     ///
     /// Returns JSON string with format:
     /// - Success: `{"output": "...", "result": "..."}`
@@ -125,13 +157,20 @@ impl LuaRepl {
             }
         };
 
-        // 5. Format and return success response
+        // 5. Apply truncation and format success response
+        let truncated_output =
+            utils::truncate_output(&eval_outcome.output.join("\n"), self.options.max_output_len);
+
+        let full_result = match eval_outcome.result {
+            Ok(values) => values.join("\n"),
+            Err(err) => format!("error: {}", err),
+        };
+
+        let truncated_result = utils::truncate_output(&full_result, self.options.max_output_len);
+
         json!({
-            "output": eval_outcome.output.join("\n"),
-            "result": match eval_outcome.result {
-                Ok(values) => values.join("\n"),
-                Err(err) => format!("error: {}", err)
-            }
+            "output": truncated_output,
+            "result": truncated_result
         })
         .to_string()
     }

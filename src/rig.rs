@@ -3,6 +3,9 @@
 //! This module provides a `rig::tool::Tool` implementation for the Lua REPL.
 //! Requires the `rig` feature to be enabled.
 //!
+//! This adapter provides output truncation to prevent large outputs from bloating the LLM's context window.
+//! By default, both `output` (from `print()`) and `result` (from `return`) are truncated to 50,000 characters.
+//!
 //! # Usage
 //!
 //! Create a `LuaRepl` tool by passing a `Repl` instance. The tool can be cloned and
@@ -21,6 +24,7 @@
 
 use crate::repl;
 use crate::tool_definition;
+use crate::utils;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
@@ -37,6 +41,18 @@ pub struct LuaReplOutput {
     pub result: String,
 }
 
+/// Configuration options for the Lua REPL tool.
+///
+/// Controls output truncation to prevent extremely large outputs from overwhelming
+/// the LLM's context window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LuaReplOptions {
+    /// Maximum length of output and result strings before truncation (default: 50,000)
+    ///
+    /// When truncated, the string will end with "...\n(output truncated)"
+    pub max_output_len: usize,
+}
+
 /// A rig-core Tool implementation for the Lua REPL.
 ///
 /// The tool maintains a reference to a shared `Repl` instance, preserving Lua state
@@ -44,16 +60,29 @@ pub struct LuaReplOutput {
 #[derive(Clone)]
 pub struct LuaRepl {
     repl: Arc<repl::Repl>,
+    options: LuaReplOptions,
 }
 
 impl LuaRepl {
-    /// Creates a new LuaRepl tool with the given Repl instance.
+    const DEFAULT_OPTIONS: LuaReplOptions = LuaReplOptions {
+        max_output_len: 50_000,
+    };
+
+    /// Creates a new LuaRepl tool with default options (50,000 character truncation limit).
     ///
     /// The Repl is wrapped in an Arc, allowing the tool to be cloned while sharing
     /// the same underlying Lua runtime state.
     pub fn new(repl: repl::Repl) -> Self {
+        Self::new_with(repl, Self::DEFAULT_OPTIONS)
+    }
+
+    /// Creates a new LuaRepl tool with custom options.
+    ///
+    /// Use this to configure custom truncation limits or other options.
+    pub fn new_with(repl: repl::Repl, options: LuaReplOptions) -> Self {
         Self {
             repl: Arc::new(repl),
+            options,
         }
     }
 }
@@ -84,12 +113,19 @@ impl Tool for LuaRepl {
             }
         };
 
+        let truncated_output =
+            utils::truncate_output(&eval_outcome.output.join("\n"), self.options.max_output_len);
+
+        let full_result = match eval_outcome.result {
+            Ok(values) => values.join("\n"),
+            Err(err) => format!("error: {}", err),
+        };
+
+        let truncated_result = utils::truncate_output(&full_result, self.options.max_output_len);
+
         Ok(LuaReplOutput {
-            output: eval_outcome.output.join("\n"),
-            result: match eval_outcome.result {
-                Ok(values) => values.join("\n"),
-                Err(err) => format!("error: {}", err),
-            },
+            output: truncated_output,
+            result: truncated_result,
         })
     }
 }

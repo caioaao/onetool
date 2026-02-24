@@ -3,6 +3,9 @@
 //! This module provides an aisdk tool implementation for the Lua REPL.
 //! Requires the `aisdk` feature to be enabled.
 //!
+//! This adapter provides output truncation to prevent large outputs from bloating the LLM's context window.
+//! By default, both `output` (from `print()`) and `result` (from `return`) are truncated to 50,000 characters.
+//!
 //! # Usage
 //!
 //! Create a `LuaRepl` tool by passing a `Repl` instance:
@@ -23,8 +26,21 @@
 //! ```
 
 use crate::repl;
+use crate::utils;
 use serde_json::Value;
 use std::sync::Arc;
+
+/// Configuration options for the Lua REPL tool.
+///
+/// Controls output truncation to prevent extremely large outputs from overwhelming
+/// the LLM's context window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LuaReplOptions {
+    /// Maximum length of output and result strings before truncation (default: 50,000)
+    ///
+    /// When truncated, the string will end with "...\n(output truncated)"
+    pub max_output_len: usize,
+}
 
 /// An aisdk tool implementation for the Lua REPL.
 ///
@@ -33,16 +49,29 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct LuaRepl {
     repl: Arc<repl::Repl>,
+    options: LuaReplOptions,
 }
 
 impl LuaRepl {
-    /// Creates a new LuaRepl tool with the given Repl instance.
+    const DEFAULT_OPTIONS: LuaReplOptions = LuaReplOptions {
+        max_output_len: 50_000,
+    };
+
+    /// Creates a new LuaRepl tool with default options (50,000 character truncation limit).
     ///
     /// The Repl is wrapped in an Arc, allowing the tool to be cloned while sharing
     /// the same underlying Lua runtime state.
     pub fn new(repl: repl::Repl) -> Self {
+        Self::new_with(repl, Self::DEFAULT_OPTIONS)
+    }
+
+    /// Creates a new LuaRepl tool with custom options.
+    ///
+    /// Use this to configure custom truncation limits or other options.
+    pub fn new_with(repl: repl::Repl, options: LuaReplOptions) -> Self {
         Self {
             repl: Arc::new(repl),
+            options,
         }
     }
 
@@ -50,11 +79,15 @@ impl LuaRepl {
     ///
     /// The returned tool captures the Repl instance and executes Lua code
     /// when called by the language model.
+    ///
+    /// **Note:** Both `output` and `result` are automatically truncated according to the
+    /// configured `max_output_len` option to prevent context window overflow.
     pub fn tool(&self) -> aisdk::core::Tool {
         use crate::tool_definition;
         use aisdk::core::{Tool, tools::ToolExecute};
 
         let repl = Arc::clone(&self.repl);
+        let options = self.options;
         let execute_fn = Box::new(move |args: Value| -> Result<String, String> {
             // Extract source_code from JSON args
             let source_code = match args.get("source_code") {
@@ -71,7 +104,7 @@ impl LuaRepl {
                 }
             };
 
-            // Format response
+            // Format response and apply truncation
             let output = eval_outcome.output.join("");
             let result = match eval_outcome.result {
                 Ok(values) => {
@@ -84,15 +117,22 @@ impl LuaRepl {
                 Err(err) => format!("error: {}", err),
             };
 
+            let truncated_output = utils::truncate_output(&output, options.max_output_len);
+            let truncated_result = utils::truncate_output(&result, options.max_output_len);
+
             // Return formatted output
-            if output.is_empty() && result.is_empty() {
+            if truncated_output.is_empty() && truncated_result.is_empty() {
                 Ok("(no output or result)".to_string())
-            } else if output.is_empty() {
-                Ok(format!("Result: {}", result))
-            } else if result.is_empty() {
-                Ok(format!("Output: {}", output.trim_end()))
+            } else if truncated_output.is_empty() {
+                Ok(format!("Result: {}", truncated_result))
+            } else if truncated_result.is_empty() {
+                Ok(format!("Output: {}", truncated_output.trim_end()))
             } else {
-                Ok(format!("Output: {}\nResult: {}", output.trim_end(), result))
+                Ok(format!(
+                    "Output: {}\nResult: {}",
+                    truncated_output.trim_end(),
+                    truncated_result
+                ))
             }
         });
 
