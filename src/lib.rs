@@ -42,6 +42,9 @@
 // -- Flatten
 pub use repl::{Repl, ReplError};
 
+// -- Private modules
+mod utils;
+
 // -- Public modules
 pub mod repl;
 pub mod runtime;
