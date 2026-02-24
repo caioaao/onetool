@@ -39,6 +39,7 @@ mistralrs = ["dep:mistralrs", "json_schema"]
 rig = ["dep:rig-core", "dep:serde", "json_schema"]
 aisdk = ["dep:aisdk", "dep:schemars", "json_schema"]
 mcp = ["dep:rmcp", "dep:tokio", "dep:serde", "dep:serde_json", "json_schema"]
+notebook_demo = ["genai"]
 
 [[example]]
 name = "genai-basic"
@@ -73,3 +74,8 @@ path = "examples/custom-functions.rs"
 name = "needle-in-haystack"
 path = "examples/needle-in-haystack.rs"
 required-features = ["genai"]
+
+[[example]]
+name = "notebook-demo"
+path = "examples/notebook-demo.rs"
+required-features = ["notebook_demo"]
