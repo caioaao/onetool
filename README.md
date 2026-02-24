@@ -2,37 +2,69 @@
 
 **Sandboxed Lua runtime for LLM tool use.**
 
-## The Problem
+## Quick Start
 
-LLM agents typically need dozens of specialized tools (calculator, date formatter, string manipulator, JSON parser, base64 encoder, hash generator, etc.). This creates two problems:
+onetool provides ready-to-use adapters for popular LLM frameworks:
 
-1. **Token costs add up**: Each tool call requires a round-trip to the LLM provider. Complex tasks need multiple calls, and you pay for every token exchanged.
-2. **Tool proliferation**: Each new tool requires API design, documentation, and testing. Tools don't compose well. And you're always limited by what you thought to create.
+- **[genai](#genai-adapter)** - `LuaRepl::new(&repl)` with `definition()` and `call()` methods
+- **[mistralrs](#mistralrs-adapter)** - `LuaRepl::new(repl)` with `definition()` and `call()` methods
+- **[rig](#rig-adapter)** - `LuaRepl::new(repl)` implements `Tool` trait
+- **[aisdk](#aisdk-adapter)** - `LuaRepl::new(repl)` with `.tool()` method
 
-What if the LLM could solve problems programmatically instead of making multiple tool calls? We already have the perfect interface for that: programming languages.
+Each adapter handles tool definition registration and execution for its framework. See [Framework Integration](#framework-integration) for detailed usage.
 
-## The Solution
+## Installation
 
-**onetool provides a sandboxed Lua REPL** that LLMs can use as a tool.
+**Basic REPL only** (no LLM framework):
+```toml
+[dependencies]
+onetool = "0.0.1-alpha.6"
+```
 
-LLMs are already trained on programming languages. By giving them code execution instead of specialized tools, you reduce token costs (one tool call instead of many) while increasing flexibility. State persists between calls for multi-step reasoning. It's safe by design with comprehensive sandboxing.
+**With genai:**
+```toml
+[dependencies]
+onetool = { version = "0.0.1-alpha.6", features = ["genai"] }
+genai = "0.5"
+```
 
-**Prior art:** Cloudflare and Anthropic have explored similar approaches with their [Code Mode](https://blog.cloudflare.com/code-mode/) and [MCP code execution](https://www.anthropic.com/engineering/code-execution-with-mcp) respectively.
+**With mistralrs:**
+```toml
+[dependencies]
+onetool = { version = "0.0.1-alpha.6", features = ["mistralrs"] }
+mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git" }
+```
 
-## Framework Support
+**With rig:**
+```toml
+[dependencies]
+onetool = { version = "0.0.1-alpha.6", features = ["rig"] }
+rig-core = "0.3"
+```
 
-onetool provides adapters for popular Rust LLM frameworks:
+**With aisdk:**
+```toml
+[dependencies]
+onetool = { version = "0.0.1-alpha.6", features = ["aisdk"] }
+aisdk = "0.2"
+```
 
-- **[genai](https://github.com/jeremychone/rust-genai)** - Multi-provider LLM client (OpenAI, Google, Anthropic)
-- **[mistral.rs](https://github.com/EricLBuehler/mistral.rs)** - Fast local model inference
-- **[rig](https://github.com/0xPlaygrounds/rig)** - Modular LLM application framework
-- **[aisdk](https://github.com/lazy-hq/aisdk)** - Rust port of Vercel's AI SDK
+**Feature flags:**
 
-See [Framework Integration](#framework-integration) for usage details.
+| Feature | Includes | Description |
+|---------|----------|-------------|
+| `genai` | `json_schema` | genai adapter + tool definition |
+| `mistralrs` | `json_schema` | mistralrs adapter + tool definition |
+| `rig` | `json_schema` | rig-core Tool implementation |
+| `aisdk` | `json_schema` | aisdk #[tool] macro integration |
+| `json_schema` | - | JSON Schema generation (included by all above) |
 
-## Quick Start: LLM Integration
+**Note:** Currently in alpha - API may change.
+
 
 ### Core REPL Usage
+
+If you need to call the REPL directly (when implementing the tool directly):
 
 ```rust
 use onetool::Repl;
@@ -56,16 +88,22 @@ repl.eval("y = 20")?;
 let result = repl.eval("return x + y")?; // "30"
 ```
 
-### LLM Framework Integration
+## The Problem
 
-onetool provides ready-to-use adapters for popular LLM frameworks:
+LLM agents typically need dozens of specialized tools (calculator, date formatter, string manipulator, JSON parser, base64 encoder, hash generator, etc.). This creates two problems:
 
-- **[genai](#genai-adapter)** - `LuaRepl::new(&repl)` with `definition()` and `call()` methods
-- **[mistralrs](#mistralrs-adapter)** - `LuaRepl::new(repl)` with `definition()` and `call()` methods
-- **[rig](#rig-adapter)** - `LuaRepl::new(repl)` implements `Tool` trait
-- **[aisdk](#aisdk-adapter)** - `LuaRepl::new(repl)` with `.tool()` method
+1. **Token costs add up**: Each tool call requires a round-trip to the LLM provider. Complex tasks need multiple calls, and you pay for every token exchanged.
+2. **Tool proliferation**: Each new tool requires API design, documentation, and testing. Tools don't compose well. And you're always limited by what you thought to create.
 
-Each adapter handles tool definition registration and execution for its framework. See [Framework Integration](#framework-integration) for detailed usage.
+What if the LLM could solve problems programmatically instead of making multiple tool calls? We already have the perfect interface for that: programming languages.
+
+## The Solution
+
+**onetool provides a sandboxed Lua REPL** that LLMs can use as a tool.
+
+LLMs are already trained on programming languages. By giving them code execution instead of specialized tools, you reduce token costs (one tool call instead of many) while increasing flexibility. State persists between calls for multi-step reasoning. It's safe by design with comprehensive sandboxing.
+
+**Prior art:** Cloudflare and Anthropic have explored similar approaches with their [Code Mode](https://blog.cloudflare.com/code-mode/) and [MCP code execution](https://www.anthropic.com/engineering/code-execution-with-mcp) respectively.
 
 ## Real Example: What Can It Do?
 
@@ -311,54 +349,6 @@ let tool = tool_definition::genai_tool();
 - Can solve multi-step problems programmatically
 - Self-documenting environment
 
-## Installation
-
-**Basic REPL only** (no LLM framework):
-```toml
-[dependencies]
-onetool = "0.0.1-alpha.5"
-```
-
-**With genai:**
-```toml
-[dependencies]
-onetool = { version = "0.0.1-alpha.5", features = ["genai"] }
-genai = "0.5"
-```
-
-**With mistralrs:**
-```toml
-[dependencies]
-onetool = { version = "0.0.1-alpha.5", features = ["mistralrs"] }
-mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git" }
-```
-
-**With rig:**
-```toml
-[dependencies]
-onetool = { version = "0.0.1-alpha.5", features = ["rig"] }
-rig-core = "0.3"
-```
-
-**With aisdk:**
-```toml
-[dependencies]
-onetool = { version = "0.0.1-alpha.5", features = ["aisdk"] }
-aisdk = "0.2"
-```
-
-**Feature flags:**
-
-| Feature | Includes | Description |
-|---------|----------|-------------|
-| `genai` | `json_schema` | genai adapter + tool definition |
-| `mistralrs` | `json_schema` | mistralrs adapter + tool definition |
-| `rig` | `json_schema` | rig-core Tool implementation |
-| `aisdk` | `json_schema` | aisdk #[tool] macro integration |
-| `json_schema` | - | JSON Schema generation (included by all above) |
-
-**Note:** Currently in alpha - API may change.
-
 ## Running the Examples
 
 All examples solve the same problem (sum of first 10 primes = 129) to demonstrate consistent behavior across frameworks.
@@ -507,7 +497,6 @@ The LLM can then query `docs["my_function"]` at runtime to understand available 
 
 ## API Overview
 
-
 Full API documentation available at [docs.rs/onetool](https://docs.rs/onetool).
 
 ## Why Lua?
@@ -533,7 +522,7 @@ Lua checks all these boxes. It's widespread enough (neovim config language, game
 
 **This is still a toy project.** Use with care - everything may break, and I might decide to change everything tomorrow.
 
-- **Version**: 0.0.1-alpha.5
+- **Version**: 0.0.1-alpha.6
 - **API Stability**: Expect breaking changes
 - **Production Ready**: No
 
@@ -564,21 +553,6 @@ cargo run --features aisdk --example aisdk-basic
 # Interactive REPL
 cargo run --example lua-repl
 ```
-
-## Architecture
-
-For implementation details, see:
-- [`src/runtime/mod.rs`](src/runtime/mod.rs) - Lua runtime definition
-- [`src/runtime/docs.rs`](src/runtime/docs.rs) - Runtime documentation implementation
-- [`src/runtime/sandbox.rs`](src/runtime/sandbox.rs) - Sandboxing implementation
-- [`src/tool_definition.rs`](src/tool_definition.rs) - Tool integration system
-
-**Key patterns:**
-- Nil-based sandboxing (simple, effective)
-- Output capture via mpsc channels
-- Persistent Lua state across invocations
-- Runtime documentation system
-
 ## License & Contributing
 
 **License:** MIT - Copyright 2026 Caio Augusto Araujo Oliveira
