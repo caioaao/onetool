@@ -24,6 +24,7 @@
 //! Blocked operations fail with "attempt to call a nil value" errors.
 
 pub mod docs;
+pub mod onetool_api;
 pub mod output;
 pub mod packages;
 pub mod policy;
