@@ -4,9 +4,13 @@ pub enum Caller {
     Package(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Action {
     LoadPackage(String),
+    CallFunction {
+        name: String,
+        args: mlua::MultiValue,
+    },
 }
 
 /// Decision result from an access policy check
@@ -84,6 +88,7 @@ impl Policy for WhiteListPolicy {
                     AccessDecision::Deny(format!("Package '{}' not in allowlist", name))
                 }
             }
+            Action::CallFunction { name: _, args: _ } => AccessDecision::Allow,
         }
     }
 }
