@@ -39,11 +39,38 @@
 
 use crate::runtime::docs::{self, LuaDoc, LuaDocTyp};
 
+/// Creates a package vault in the Lua registry to preserve stdlib packages.
+///
+/// This function must be called BEFORE sandboxing, as it captures references to
+/// packages that will be set to nil during sandboxing. The vault allows
+/// `onetool.require()` to restore access to these packages when permitted by
+/// the access policy.
+fn create_package_vault(lua: &mlua::Lua) -> mlua::Result<()> {
+    let vault = lua.create_table()?;
+    let globals = lua.globals();
+
+    // Preserve io package
+    if let Ok(io_pkg) = globals.get::<mlua::Value>("io") {
+        vault.set("io", io_pkg)?;
+    }
+
+    // Preserve full os package (before it gets sandboxed to only time/date)
+    if let Ok(os_pkg) = globals.get::<mlua::Table>("os") {
+        vault.set("os", os_pkg)?;
+    }
+
+    // Preserve other potentially useful packages
+    if let Ok(debug_pkg) = globals.get::<mlua::Value>("debug") {
+        vault.set("debug", debug_pkg)?;
+    }
+
+    lua.set_named_registry_value("__onetool_package_vault", vault)?;
+    Ok(())
+}
+
 /// Applies sandboxing to an existing Lua runtime.
 ///
-/// This is a destructive operation that removes dangerous globals. Typically you should
-/// use [`crate::runtime::default()`] instead, but this function is useful when you need
-/// to configure custom globals before sandboxing.
+/// Sandboxed packages are added to a `vault` so it can be accessed by priviledged actors
 ///
 /// # Example
 ///
@@ -58,6 +85,8 @@ use crate::runtime::docs::{self, LuaDoc, LuaDocTyp};
 /// # }
 /// ```
 pub fn apply(lua: &mlua::Lua) -> mlua::Result<()> {
+    create_package_vault(lua)?;
+
     // First, preserve safe os functions before blocking
     sandbox_os_module(lua)?;
 
