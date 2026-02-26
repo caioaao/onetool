@@ -29,6 +29,7 @@ pub mod output;
 pub mod packages;
 pub mod policy;
 pub mod sandbox;
+pub mod sandbox_v2;
 
 pub use onetool_api::*;
 
