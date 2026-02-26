@@ -30,6 +30,8 @@ pub mod packages;
 pub mod policy;
 pub mod sandbox;
 
+pub use onetool_api::*;
+
 /// Creates a sandboxed Lua runtime.
 ///
 /// Returns a Lua VM with dangerous operations blocked. See module-level documentation
