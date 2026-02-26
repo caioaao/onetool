@@ -35,17 +35,6 @@ impl<'lua> Builder<'lua> {
                 return Ok(mlua::Value::Nil);
             }
 
-            // Try to load from vault (stdlib) first
-            let vault: Result<mlua::Table, _> = lua.named_registry_value("__onetool_package_vault");
-            if let Ok(vault) = vault {
-                if let Ok(pkg) = vault.get::<mlua::Value>(pkg_name.clone()) {
-                    if !matches!(pkg, mlua::Value::Nil) {
-                        return Ok(pkg);
-                    }
-                }
-            }
-
-            // Fall back to standard require() for user packages
             match lua.globals().get::<mlua::Function>("require") {
                 Ok(require_fn) => match require_fn.call::<mlua::Value>(pkg_name) {
                     Ok(module) => return Ok(module),
@@ -118,19 +107,6 @@ mod tests {
     // Test Helper Functions
     // ============================================================================
 
-    /// Populates the package vault with test packages
-    fn setup_vault_with_packages(
-        lua: &mlua::Lua,
-        packages: &[(&str, mlua::Value)],
-    ) -> mlua::Result<()> {
-        let vault = lua.create_table()?;
-        for (name, value) in packages {
-            vault.set(*name, value.clone())?;
-        }
-        lua.set_named_registry_value("__onetool_package_vault", vault)?;
-        Ok(())
-    }
-
     /// Creates a simple test package (a Lua table with a test function)
     fn create_test_package(lua: &mlua::Lua, name: &str) -> mlua::Result<mlua::Value> {
         let package = lua.create_table()?;
@@ -142,7 +118,7 @@ mod tests {
     }
 
     // ============================================================================
-    // 1. Installation Tests
+    // Installation Tests
     // ============================================================================
 
     #[test]
@@ -212,17 +188,13 @@ mod tests {
     }
 
     // ============================================================================
-    // 2. Policy Integration Tests
+    // Policy Integration Tests
     // ============================================================================
 
     #[test]
     fn require_returns_nil_when_policy_denies() {
         let lua = mlua::Lua::new();
         let policy = Arc::new(DenyPolicy);
-
-        // Setup vault with package (policy will deny regardless)
-        let io_pkg = create_test_package(&lua, "io").unwrap();
-        setup_vault_with_packages(&lua, &[("io", io_pkg)]).unwrap();
 
         install_onetool_api(&lua, policy).unwrap();
 
@@ -232,142 +204,9 @@ mod tests {
     }
 
     #[test]
-    fn require_loads_from_vault_when_policy_allows() {
-        let lua = mlua::Lua::new();
-        let policy = Arc::new(AllowPolicy);
-
-        // Create test package and put in vault
-        let test_pkg = create_test_package(&lua, "testpkg").unwrap();
-        setup_vault_with_packages(&lua, &[("testpkg", test_pkg)]).unwrap();
-
-        install_onetool_api(&lua, policy).unwrap();
-
-        // Verify that when policy allows, package loads from vault
-        let result = lua
-            .load(
-                r#"
-                local pkg = onetool.require("testpkg")
-                return pkg.test()
-            "#,
-            )
-            .eval::<String>()
-            .unwrap();
-
-        assert_eq!(result, "Hello from testpkg");
-    }
-
-    // ============================================================================
-    // 3. Vault Loading Tests
-    // ============================================================================
-
-    #[test]
-    fn returns_nil_when_package_not_in_vault() {
-        let lua = mlua::Lua::new();
-        let policy = Arc::new(AllowPolicy);
-
-        // Create empty vault
-        setup_vault_with_packages(&lua, &[]).unwrap();
-
-        install_onetool_api(&lua, policy).unwrap();
-
-        // Request non-existent package
-        let result: mlua::Value = lua
-            .load(r#"return onetool.require("nonexistent")"#)
-            .eval()
-            .unwrap();
-        assert!(matches!(result, mlua::Value::Nil));
-    }
-
-    #[test]
-    fn vault_nil_value_triggers_fallback() {
-        let lua = mlua::Lua::new();
-        let policy = Arc::new(AllowPolicy);
-
-        // Setup vault with package name mapped to nil
-        setup_vault_with_packages(&lua, &[("nilpkg", mlua::Value::Nil)]).unwrap();
-
-        // Create package in package.loaded for fallback
-        lua.load(
-            r#"
-            package = package or {}
-            package.loaded = package.loaded or {}
-            package.loaded["nilpkg"] = { fallback = true }
-        "#,
-        )
-        .exec()
-        .unwrap();
-
-        // Setup standard require function
-        lua.load(
-            r#"
-            require = function(name)
-                return package.loaded[name]
-            end
-        "#,
-        )
-        .exec()
-        .unwrap();
-
-        install_onetool_api(&lua, policy).unwrap();
-
-        // Verify fallback to standard require when vault has nil
-        let has_fallback: bool = lua
-            .load(r#"return onetool.require("nilpkg").fallback == true"#)
-            .eval()
-            .unwrap();
-        assert!(has_fallback);
-    }
-
-    #[test]
-    fn missing_vault_triggers_fallback() {
-        let lua = mlua::Lua::new();
-        let policy = Arc::new(AllowPolicy);
-
-        // Don't create vault registry key at all
-
-        // Create package in package.loaded for fallback
-        lua.load(
-            r#"
-            package = package or {}
-            package.loaded = package.loaded or {}
-            package.loaded["userpkg"] = { user_module = true }
-        "#,
-        )
-        .exec()
-        .unwrap();
-
-        // Setup standard require function
-        lua.load(
-            r#"
-            require = function(name)
-                return package.loaded[name]
-            end
-        "#,
-        )
-        .exec()
-        .unwrap();
-
-        install_onetool_api(&lua, policy).unwrap();
-
-        // Verify graceful fallback when vault is missing
-        let has_user_module: bool = lua
-            .load(r#"return onetool.require("userpkg").user_module == true"#)
-            .eval()
-            .unwrap();
-        assert!(has_user_module);
-    }
-
-    // ============================================================================
-    // 4. Fallback Behavior Tests
-    // ============================================================================
-
-    #[test]
     fn falls_back_to_standard_require() {
         let lua = mlua::Lua::new();
         let policy = Arc::new(AllowPolicy);
-
-        // Create empty vault
-        setup_vault_with_packages(&lua, &[]).unwrap();
 
         // Create user package in package.loaded
         lua.load(
@@ -406,9 +245,6 @@ mod tests {
         let lua = mlua::Lua::new();
         let policy = Arc::new(AllowPolicy);
 
-        // Create empty vault
-        setup_vault_with_packages(&lua, &[]).unwrap();
-
         // Setup standard require that fails for unknown packages
         lua.load(
             r#"
@@ -435,9 +271,6 @@ mod tests {
         let lua = mlua::Lua::new();
         let policy = Arc::new(AllowPolicy);
 
-        // Create empty vault
-        setup_vault_with_packages(&lua, &[]).unwrap();
-
         // Don't setup standard require (it's nil)
         lua.globals().set("require", mlua::Value::Nil).unwrap();
 
@@ -452,7 +285,7 @@ mod tests {
     }
 
     // ============================================================================
-    // 5. Builder Pattern Tests
+    // Builder Pattern Tests
     // ============================================================================
 
     #[test]
@@ -499,9 +332,6 @@ mod tests {
         assert!(matches!(result1, mlua::Value::Nil));
 
         // Second install with AllowPolicy
-        let io_pkg = create_test_package(&lua, "io").unwrap();
-        setup_vault_with_packages(&lua, &[("io", io_pkg)]).unwrap();
-
         let allow_policy = Arc::new(AllowPolicy);
         install_onetool_api(&lua, allow_policy).unwrap();
 
