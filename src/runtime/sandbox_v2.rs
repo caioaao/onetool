@@ -1,105 +1,207 @@
 //! Lua runtime sandboxing (v2 API - functional approach).
-//!
-//! This module provides an alternative sandboxing API that operates on function values
-//! rather than mutating tables in-place. This enables functional composition patterns
-//! and gives more control over where wrapped functions are assigned.
-//!
-//! # Comparison with v1 API
-//!
-//! - **v1 ([`sandbox::wrap_unsafe_call`])**: Mutates a table by replacing a function key
-//! - **v2 ([`wrap_unsafe_function`])**: Returns a new wrapped function value
-//!
-//! Use v1 for directly replacing global functions or module functions.
-//! Use v2 when you need to compose wrapped functions or create utility tables.
-//!
-//! [`sandbox::wrap_unsafe_call`]: super::sandbox::wrap_unsafe_call
-//!
-//! # Example
-//!
-//! ```
-//! use std::sync::Arc;
-//! use onetool::runtime::{sandbox_v2, policy};
-//!
-//! # fn example() -> mlua::Result<()> {
-//! let lua = mlua::Lua::new();
-//! let policy = Arc::new(policy::DenyAllPolicy);
-//!
-//! // Get original function
-//! let os_table: mlua::Table = lua.globals().get("os")?;
-//! let execute: mlua::Function = os_table.get("execute")?;
-//!
-//! // Wrap it without mutating the table
-//! let wrapped = sandbox_v2::wrap_unsafe_function(&lua, "os.execute", execute, policy)?;
-//!
-//! // Assign wherever needed
-//! lua.globals().set("safe_execute", wrapped)?;
-//! # Ok(())
-//! # }
-//! ```
 
 use super::policy;
 use std::sync::Arc;
 
-/// Creates a policy-controlled wrapper around a Lua function.
+// ============================================================================
+// API Specification (Compile-time Constants)
+// ============================================================================
+
+/// Safety level for a Lua function
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SafetyLevel {
+    /// Function is safe - no policy check, copied directly
+    Safe,
+    /// Function requires policy check - wrapped with access control
+    Unsafe,
+    // Note: Functions NOT in the spec are implicitly Forbidden (removed)
+}
+
+/// Entry in the API specification (recursive definition with embedded names)
 ///
-/// Returns a new function that intercepts calls, checks the policy, and either
-/// forwards to the original function or returns `nil` on denial. Unlike
-/// [`wrap_unsafe_call`], this does not mutate any tables - it returns a new
-/// function value that can be assigned wherever needed.
+/// This structure allows defining the spec as a compile-time constant:
+/// - No HashMap initialization overhead
+/// - More readable structure
+/// - Supports functions and nested modules
+#[derive(Debug, Clone)]
+pub enum ApiEntry {
+    /// A function with a safety level
+    Function {
+        name: &'static str,
+        safety: SafetyLevel,
+    },
+    /// A module containing more entries (allows nesting)
+    Module {
+        name: &'static str,
+        entries: &'static [ApiEntry],
+    },
+}
+
+impl ApiEntry {
+    pub const fn unsafe_function(name: &'static str) -> Self {
+        ApiEntry::Function {
+            name,
+            safety: SafetyLevel::Unsafe,
+        }
+    }
+
+    pub const fn safe_function(name: &'static str) -> Self {
+        ApiEntry::Function {
+            name,
+            safety: SafetyLevel::Safe,
+        }
+    }
+}
+
+/// Complete API specification - array of entries
+pub type ApiSpec = &'static [ApiEntry];
+
+/// Default API specification
+pub const DEFAULT_API_SPEC: ApiSpec = &[
+    // os module: only time and date are safe
+    ApiEntry::Module {
+        name: "os",
+        entries: &[
+            ApiEntry::safe_function("time"),
+            ApiEntry::safe_function("date"),
+            ApiEntry::unsafe_function("execute"),
+            ApiEntry::unsafe_function("remove"),
+            ApiEntry::unsafe_function("rename"),
+            ApiEntry::unsafe_function("exit"),
+            ApiEntry::unsafe_function("getenv"),
+            ApiEntry::unsafe_function("setlocale"),
+            ApiEntry::unsafe_function("tmpname"),
+        ],
+    },
+    // io module: all functions unsafe
+    ApiEntry::Module {
+        name: "io",
+        entries: &[
+            ApiEntry::unsafe_function("open"),
+            ApiEntry::unsafe_function("close"),
+            ApiEntry::unsafe_function("read"),
+            ApiEntry::unsafe_function("write"),
+            ApiEntry::unsafe_function("flush"),
+            ApiEntry::unsafe_function("lines"),
+            ApiEntry::unsafe_function("input"),
+            ApiEntry::unsafe_function("output"),
+            ApiEntry::unsafe_function("popen"),
+            ApiEntry::unsafe_function("tmpfile"),
+            ApiEntry::unsafe_function("type"),
+        ],
+    },
+    // Global functions (top-level)
+    ApiEntry::unsafe_function("load"),
+    ApiEntry::unsafe_function("loadstring"),
+    ApiEntry::unsafe_function("loadfile"),
+    ApiEntry::unsafe_function("dofile"),
+    ApiEntry::unsafe_function("require"),
+    ApiEntry::unsafe_function("getmetatable"),
+    ApiEntry::unsafe_function("setmetatable"),
+    ApiEntry::unsafe_function("rawget"),
+    ApiEntry::unsafe_function("rawset"),
+    ApiEntry::unsafe_function("rawequal"),
+    ApiEntry::unsafe_function("rawlen"),
+    ApiEntry::unsafe_function("collectgarbage"),
+    ApiEntry::safe_function("type"),
+    ApiEntry::safe_function("tonumber"),
+    ApiEntry::safe_function("tostring"),
+];
+
+/// Process API entries from a source table and return a new processed table
 ///
-/// [`wrap_unsafe_call`]: super::sandbox::wrap_unsafe_call
+/// Generic function that handles the core logic of:
+/// - Iterating through ApiEntry items
+/// - Handling Safe functions (copy directly)
+/// - Handling Unsafe functions (wrap with policy)
+/// - Recursively processing nested modules
+///
+/// Returns a new table with only the entries specified in the API spec.
+fn process_entries<P: policy::Policy + 'static>(
+    lua: &mlua::Lua,
+    entries: &'static [ApiEntry],
+    policy: Arc<P>,
+    name_prefix: &str,
+    source_table: &mlua::Table,
+) -> mlua::Result<mlua::Table> {
+    let target_table = lua.create_table()?;
+
+    for entry in entries {
+        match entry {
+            ApiEntry::Function { name, safety } => {
+                if let Ok(value) = source_table.get::<mlua::Value>(*name) {
+                    match safety {
+                        SafetyLevel::Safe => {
+                            target_table.set(*name, value)?;
+                        }
+                        SafetyLevel::Unsafe => {
+                            if let mlua::Value::Function(func) = value {
+                                let qualified_name = if name_prefix.is_empty() {
+                                    name.to_string()
+                                } else {
+                                    format!("{}.{}", name_prefix, name)
+                                };
+                                let wrapped = wrap_unsafe_function(
+                                    lua,
+                                    &qualified_name,
+                                    func,
+                                    Arc::clone(&policy),
+                                )?;
+                                target_table.set(*name, wrapped)?;
+                            } else {
+                                // Not a function, copy directly (constants, etc.)
+                                target_table.set(*name, value)?;
+                            }
+                        }
+                    }
+                }
+            }
+            ApiEntry::Module { name, entries } => {
+                if let Ok(original_module) = source_table.get::<mlua::Table>(*name) {
+                    let qualified_name = if name_prefix.is_empty() {
+                        name.to_string()
+                    } else {
+                        format!("{}.{}", name_prefix, name)
+                    };
+
+                    // Recursive call - returns new processed module
+                    let processed_module = process_entries(
+                        lua,
+                        entries,
+                        Arc::clone(&policy),
+                        &qualified_name,
+                        &original_module,
+                    )?;
+
+                    target_table.set(*name, processed_module)?;
+                }
+            }
+        }
+    }
+
+    Ok(target_table)
+}
+
+/// Applies sandboxing with policy-based access control
 ///
 /// # Arguments
+/// * `lua` - The Lua environment
+/// * `policy` - Policy for access control decisions
+/// * `api_spec` - Optional custom API spec (uses DEFAULT_API_SPEC if None)
 ///
-/// * `lua` - The Lua environment (needed to create the wrapper closure)
-/// * `function_name` - Name used in policy checks and denial logs (not for lookup)
-/// * `original_fn` - The Lua function to wrap
-/// * `policy` - Thread-safe policy reference (`Arc<P>`) for access decisions
+/// # Sandboxing Strategy
 ///
-/// # Returns
+/// Only functions explicitly listed in the API spec are available:
+/// - **Safe** functions: Copied directly without policy checks
+/// - **Unsafe** functions: Wrapped with policy checks
+/// - Functions NOT in spec: Removed entirely (implicit Forbidden)
 ///
-/// A new wrapped function that:
-/// - Checks policy with `Action::CallFunction { name, args }` before each call
-/// - Returns `nil` (single value) when denied, logging reason to stderr
-/// - Forwards all return values from `original_fn` when allowed
-/// - Propagates any Lua errors raised by `original_fn`
+/// **Completely blocked (set to nil):**
+/// - `debug` - too dangerous even with policy
+/// - `coroutine` - blocked entirely
+/// - `package` - blocked entirely
 ///
-/// # Behavior Details
-///
-/// **Policy checking:**
-/// - Always uses `Caller::Agent` as the caller identity
-/// - Function name is passed as provided (not resolved from environment)
-/// - All arguments are cloned and passed to the policy for inspection
-///
-/// **Denial handling:**
-/// - Logs denial reason to stderr (visible to users)
-/// - Returns `MultiValue::from_vec(vec![Value::Nil])` (single nil)
-/// - Does not raise a Lua error
-///
-/// **Allow handling:**
-/// - Calls original function with exact arguments received
-/// - Forwards all return values (preserves multiple returns)
-/// - Propagates any errors from the original function
-///
-/// # Comparison: `wrap_unsafe_call` vs `wrap_unsafe_function`
-///
-/// | Feature              | `wrap_unsafe_call`  | `wrap_unsafe_function` |
-/// |----------------------|---------------------|------------------------|
-/// | Mutates table        | Yes                 | No                     |
-/// | Returns              | `()`                | `Function`             |
-/// | Use case             | Replace globals     | Composition            |
-/// | Error on missing fn  | Yes                 | N/A (fn is parameter)  |
-///
-/// # Security Considerations
-///
-/// - **Always uses `Caller::Agent`**: Does not distinguish between different callers
-/// - **Denial logging**: Denials are logged to stderr, visible to users
-/// - **Original function errors**: Lua errors from the original function still propagate
-/// - **Direct references**: If other references to `original_fn` exist, they bypass the wrapper
-///
-/// # Examples
-///
-/// ## Basic wrapping with allow policy
+/// # Example
 ///
 /// ```
 /// use std::sync::Arc;
@@ -107,88 +209,48 @@ use std::sync::Arc;
 ///
 /// # fn example() -> mlua::Result<()> {
 /// let lua = mlua::Lua::new();
-/// let policy = Arc::new(policy::WhiteListPolicy::new(&["io"]));
+/// let policy = Arc::new(policy::DenyAllPolicy);
+/// sandbox_v2::apply(&lua, policy, None)?; // Use default spec
 ///
-/// // Create a simple Lua function
-/// lua.load("function add(a, b) return a + b end").exec()?;
-/// let add_fn: mlua::Function = lua.globals().get("add")?;
-///
-/// // Wrap it (policy allows all function calls in this example)
-/// let wrapped = sandbox_v2::wrap_unsafe_function(&lua, "add", add_fn, policy)?;
-///
-/// // Assign to a new name
-/// lua.globals().set("safe_add", wrapped)?;
-///
-/// // Call works and returns correct result
-/// let result: i32 = lua.load("return safe_add(3, 5)").eval()?;
-/// assert_eq!(result, 8);
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## Denial scenario
-///
-/// ```
-/// use std::sync::Arc;
-/// use onetool::runtime::{sandbox_v2, policy};
-///
-/// # fn example() -> mlua::Result<()> {
-/// let lua = mlua::Lua::new();
-/// let deny_policy = Arc::new(policy::DenyAllPolicy);
-///
-/// // Get os.execute
-/// let os_table: mlua::Table = lua.globals().get("os")?;
-/// let execute: mlua::Function = os_table.get("execute")?;
-///
-/// // Wrap with deny policy
-/// let wrapped = sandbox_v2::wrap_unsafe_function(&lua, "os.execute", execute, deny_policy)?;
-/// lua.globals().set("safe_execute", wrapped)?;
-///
-/// // Call returns nil (denial logged to stderr)
-/// let result: mlua::Value = lua.load("return safe_execute('ls')").eval()?;
+/// // os.execute is wrapped - returns nil on denial
+/// let result: mlua::Value = lua.load("return os.execute('echo test')").eval()?;
 /// assert!(matches!(result, mlua::Value::Nil));
-/// # Ok(())
-/// # }
-/// ```
 ///
-/// ## Functional composition - utility table
-///
-/// ```
-/// use std::sync::Arc;
-/// use onetool::runtime::{sandbox_v2, policy};
-///
-/// # fn example() -> mlua::Result<()> {
-/// let lua = mlua::Lua::new();
-/// let policy = Arc::new(policy::WhiteListPolicy::new(&["os"]));
-///
-/// // Create a utility table with multiple wrapped functions
-/// let os_table: mlua::Table = lua.globals().get("os")?;
-/// let time_fn: mlua::Function = os_table.get("time")?;
-/// let date_fn: mlua::Function = os_table.get("date")?;
-///
-/// let wrapped_time = sandbox_v2::wrap_unsafe_function(&lua, "os.time", time_fn, policy.clone())?;
-/// let wrapped_date = sandbox_v2::wrap_unsafe_function(&lua, "os.date", date_fn, policy)?;
-///
-/// let utils = lua.create_table()?;
-/// utils.set("time", wrapped_time)?;
-/// utils.set("date", wrapped_date)?;
-/// lua.globals().set("safe_os", utils)?;
-///
-/// // Use the utility table
-/// let timestamp: i64 = lua.load("return safe_os.time()").eval()?;
+/// // os.time is safe - works without policy checks
+/// let timestamp: i64 = lua.load("return os.time()").eval()?;
 /// assert!(timestamp > 0);
 /// # Ok(())
 /// # }
 /// ```
-///
-/// # Errors
-///
-/// Returns `mlua::Error` if:
-/// - Creating the wrapper function fails (invalid Lua state)
-///
-/// Note: Wrapped function calls can also error if:
-/// - The original function raises a Lua error (propagated)
-/// - Policy denials do NOT raise errors (they return `nil` instead)
+pub fn apply<P: policy::Policy + 'static>(
+    lua: &mlua::Lua,
+    policy: Arc<P>,
+    api_spec: Option<ApiSpec>,
+) -> mlua::Result<()> {
+    let spec = api_spec.unwrap_or(DEFAULT_API_SPEC);
+    let globals = lua.globals();
+
+    // Collect which modules are in the spec
+    let mut modules_in_spec = std::collections::HashSet::new();
+    for entry in spec {
+        if let ApiEntry::Module { name, .. } = entry {
+            modules_in_spec.insert(*name);
+        }
+    }
+    // Process ALL entries (modules AND functions) through process_entries
+    // This eliminates duplication - single code path for all processing
+    let processed = process_entries(
+        lua, spec, policy, "", // Empty prefix for top-level entries
+        &globals,
+    )?;
+
+    globals.clear()?;
+
+    processed.for_each(|k: mlua::Value, v: mlua::Value| globals.set(k, v))?;
+
+    Ok(())
+}
+
 pub fn wrap_unsafe_function<P: policy::Policy + 'static>(
     lua: &mlua::Lua,
     function_name: &str,
@@ -467,7 +529,9 @@ mod tests {
         let policy = Arc::new(AllowPolicy);
 
         // Create a function that explicitly returns nil
-        lua.load("function ret_nil() return nil end").exec().unwrap();
+        lua.load("function ret_nil() return nil end")
+            .exec()
+            .unwrap();
         let original: mlua::Function = lua.globals().get("ret_nil").unwrap();
 
         // Wrap and test
@@ -580,7 +644,15 @@ mod tests {
             .load("return safe_mixed('hello', 42, true, {})")
             .eval()
             .unwrap();
-        assert_eq!(result, ("string".to_string(), "number".to_string(), "boolean".to_string(), "table".to_string()));
+        assert_eq!(
+            result,
+            (
+                "string".to_string(),
+                "number".to_string(),
+                "boolean".to_string(),
+                "table".to_string()
+            )
+        );
     }
 
     // Policy interaction
@@ -650,10 +722,7 @@ mod tests {
         let _: i32 = lua.load("return wrapped()").eval().unwrap();
 
         // Verify policy received Caller::Agent
-        assert_eq!(
-            policy_clone.get_captured_caller(),
-            Some(Caller::Agent)
-        );
+        assert_eq!(policy_clone.get_captured_caller(), Some(Caller::Agent));
     }
 
     // Integration
@@ -700,5 +769,291 @@ mod tests {
         // Call and verify it returns a number
         let result: i64 = lua.load("return safe_time()").eval().unwrap();
         assert!(result > 0);
+    }
+
+    // ============================================================================
+    // apply() function tests
+    // ============================================================================
+
+    #[test]
+    fn test_apply_os_execute_wrapped_deny_policy() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // Should be wrapped (returns nil on denial), not blocked (error)
+        let result: mlua::Value = lua.load("return os.execute('echo test')").eval().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_os_time_not_wrapped() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // os.time should work without policy checks (it's in the safe list)
+        let result: i64 = lua.load("return os.time()").eval().unwrap();
+        assert!(result > 0);
+    }
+
+    #[test]
+    fn test_apply_os_date_not_wrapped() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // os.date should work without policy checks (it's in the safe list)
+        let result: String = lua.load("return os.date('%Y')").eval().unwrap();
+        // Should return a 4-digit year
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_apply_io_open_wrapped_deny_policy() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // io.open should be wrapped and return nil on denial
+        let result: mlua::Value = lua.load("return io.open('test.txt', 'r')").eval().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_global_load_wrapped_deny_policy() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // load should be wrapped and return nil on denial
+        let result: mlua::Value = lua.load("return load('return 1')").eval().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_global_require_wrapped_deny_policy() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // require should be wrapped and return nil on denial
+        let result: mlua::Value = lua.load("return require('os')").eval().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_debug_blocked_completely() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(AllowPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // debug should be nil (completely blocked, not wrapped)
+        let result = lua.load("return debug").eval::<mlua::Value>().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_coroutine_blocked_completely() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(AllowPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // coroutine should be nil (completely blocked, not wrapped)
+        let result = lua.load("return coroutine").eval::<mlua::Value>().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_package_blocked_completely() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(AllowPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // package should be nil (completely blocked, not wrapped)
+        let result = lua.load("return package").eval::<mlua::Value>().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_with_allow_policy_os_execute_works() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(AllowPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // With AllowPolicy, os.execute should work (though we can't test actual execution)
+        // At minimum, it should not return nil due to policy denial
+        let result = lua
+            .load("return type(os.execute)")
+            .eval::<String>()
+            .unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_apply_qualified_names_used() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(CapturingPolicy::new());
+        let policy_clone = policy.clone();
+
+        apply(&lua, policy, None).unwrap();
+
+        // Call os.execute and verify the policy received the qualified name
+        let _: mlua::Value = lua.load("return os.execute('echo test')").eval().unwrap();
+
+        // Verify policy received "os.execute", not just "execute"
+        assert_eq!(
+            policy_clone.get_captured_name(),
+            Some("os.execute".to_string())
+        );
+    }
+
+    #[test]
+    fn test_apply_os_functions_wrapped_or_safe() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // Verify safe functions work directly (not wrapped)
+        let time_result: i64 = lua.load("return os.time()").eval().unwrap();
+        assert!(time_result > 0);
+
+        let date_result: String = lua.load("return os.date('%Y')").eval().unwrap();
+        assert_eq!(date_result.len(), 4);
+
+        // Verify unsafe functions are present but wrapped (return nil with DenyPolicy)
+        // os.execute exists but is wrapped
+        let execute_type: String = lua.load("return type(os.execute)").eval().unwrap();
+        assert_eq!(execute_type, "function");
+
+        // But calling it returns nil due to policy denial
+        let execute_result: mlua::Value =
+            lua.load("return os.execute('echo test')").eval().unwrap();
+        assert!(matches!(execute_result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_apply_safe_globals_still_work() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+        apply(&lua, policy, None).unwrap();
+
+        // Safe globals should still work
+        let result: i32 = lua.load("return tonumber('42')").eval().unwrap();
+        assert_eq!(result, 42);
+
+        let result: String = lua.load("return type(42)").eval().unwrap();
+        assert_eq!(result, "number");
+
+        let result: String = lua.load("return tostring(42)").eval().unwrap();
+        assert_eq!(result, "42");
+    }
+
+    // ============================================================================
+    // Custom API Spec Tests
+    // ============================================================================
+
+    #[test]
+    fn test_apply_with_custom_spec() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(DenyPolicy);
+
+        // Create minimal custom spec
+        const CUSTOM_SPEC: ApiSpec = &[ApiEntry::Module {
+            name: "os",
+            entries: &[ApiEntry::Function {
+                name: "time",
+                safety: SafetyLevel::Safe,
+            }],
+        }];
+
+        apply(&lua, policy, Some(CUSTOM_SPEC)).unwrap();
+
+        // Only os.time should exist
+        let time: i64 = lua.load("return os.time()").eval().unwrap();
+        assert!(time > 0);
+
+        // os.date not in spec = forbidden (should be nil or error)
+        let result = lua.load("return os.date").eval::<mlua::Value>();
+        // Either it's nil or we get an error trying to access it
+        match result {
+            Ok(mlua::Value::Nil) => { /* expected */ }
+            Err(_) => { /* also acceptable */ }
+            Ok(_) => panic!("os.date should not exist in custom spec"),
+        }
+    }
+
+    #[test]
+    fn test_apply_with_empty_spec_forbids_everything() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(AllowPolicy);
+
+        // Empty spec = everything forbidden
+        const EMPTY_SPEC: ApiSpec = &[];
+        apply(&lua, policy, Some(EMPTY_SPEC)).unwrap();
+
+        // os module not in spec = forbidden
+        let result = lua.load("return os").eval::<mlua::Value>().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+
+        // io module not in spec = forbidden
+        let result = lua.load("return io").eval::<mlua::Value>().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_custom_spec_with_unsafe_functions() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(AllowPolicy);
+
+        // Custom spec with unsafe function
+        const CUSTOM_SPEC: ApiSpec = &[
+            ApiEntry::Module {
+                name: "os",
+                entries: &[ApiEntry::Function {
+                    name: "execute",
+                    safety: SafetyLevel::Unsafe,
+                }],
+            },
+            ApiEntry::Function {
+                name: "type",
+                safety: SafetyLevel::Safe,
+            },
+        ];
+
+        apply(&lua, policy, Some(CUSTOM_SPEC)).unwrap();
+
+        // os.execute should exist as a function
+        let execute_type: String = lua.load("return type(os.execute)").eval().unwrap();
+        assert_eq!(execute_type, "function");
+
+        // But os.time should NOT exist (not in custom spec)
+        let result = lua.load("return os.time").eval::<mlua::Value>();
+        match result {
+            Ok(mlua::Value::Nil) => { /* expected */ }
+            Err(_) => { /* also acceptable */ }
+            Ok(_) => panic!("os.time should not exist in custom spec"),
+        }
+    }
+
+    #[test]
+    fn test_default_spec_includes_expected_functions() {
+        let lua = mlua::Lua::new();
+        let policy = Arc::new(AllowPolicy);
+        apply(&lua, policy, None).unwrap(); // Use default spec
+
+        // Safe functions exist
+        let time: i64 = lua.load("return os.time()").eval().unwrap();
+        assert!(time > 0);
+
+        let date: String = lua.load("return os.date('%Y')").eval().unwrap();
+        assert_eq!(date.len(), 4);
+
+        // Unsafe functions exist and are wrapped
+        let execute_type: String = lua.load("return type(os.execute)").eval().unwrap();
+        assert_eq!(execute_type, "function");
+
+        let load_type: String = lua.load("return type(load)").eval().unwrap();
+        assert_eq!(load_type, "function");
     }
 }
