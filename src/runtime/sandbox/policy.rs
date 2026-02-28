@@ -1,17 +1,6 @@
-/// The entity requesting access to a restricted operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Caller {
-    /// The LLM agent (code submitted via [`Repl::eval`](crate::Repl::eval))
-    Agent,
-    /// A Lua package loaded via `require()`
-    Package(String),
-}
-
 /// An action that requires policy approval before execution.
 #[derive(Debug, Clone)]
 pub enum Action {
-    /// Loading a Lua package via `require()`
-    LoadPackage(String),
     /// Calling a wrapped unsafe function (e.g., `os.execute`, `io.open`)
     CallFunction {
         /// Qualified function name (e.g., `"os.execute"`, `"io.open"`)
@@ -33,28 +22,27 @@ pub enum Decision {
 /// Policy controls access to dangerous/restricted APIs
 ///
 /// Implementations of this trait determine whether specific actions
-/// (like loading packages) should be allowed in the sandboxed environment.
+/// should be allowed in the sandboxed environment.
 pub trait Policy: Send + Sync {
     /// Check if an action should be allowed
     ///
     /// # Arguments
-    /// * `caller` - The caller
     /// * `action` - The action being requested
     ///
     /// # Returns
     /// [`Decision::Allow`] if the action should be permitted,
     /// [`Decision::Deny`] with a reason otherwise
-    fn check_access(&self, scope: &Caller, action: &Action) -> Decision;
+    fn check_access(&self, action: &Action) -> Decision;
 }
 
 /// Strict policy that denies all access requests
 ///
-/// This is the default policy that blocks all attempts to load packages
-/// or perform restricted operations.
+/// This is the default policy that blocks all attempts to call unsafe
+/// functions or perform restricted operations.
 pub struct DenyAllPolicy;
 
 impl Policy for DenyAllPolicy {
-    fn check_access(&self, _: &Caller, _: &Action) -> Decision {
+    fn check_access(&self, _: &Action) -> Decision {
         Decision::Deny("Access denied by strict policy".to_string())
     }
 }
@@ -95,7 +83,7 @@ impl Policy for DenyAllPolicy {
 pub struct DangerousAllowAllPolicy;
 
 impl Policy for DangerousAllowAllPolicy {
-    fn check_access(&self, _: &Caller, _: &Action) -> Decision {
+    fn check_access(&self, _: &Action) -> Decision {
         Decision::Allow
     }
 }

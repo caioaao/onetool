@@ -168,7 +168,7 @@ impl Repl {
     /// # Example: Custom Policy
     ///
     /// ```
-    /// use onetool::{Repl, runtime::sandbox::policy::{Policy, Caller, Action, Decision}};
+    /// use onetool::{Repl, runtime::sandbox::policy::{Policy, Action, Decision}};
     /// use std::sync::Arc;
     ///
     /// # fn example() -> Result<(), mlua::Error> {
@@ -176,7 +176,7 @@ impl Repl {
     /// struct SelectivePolicy;
     ///
     /// impl Policy for SelectivePolicy {
-    ///     fn check_access(&self, _caller: &Caller, action: &Action) -> Decision {
+    ///     fn check_access(&self, action: &Action) -> Decision {
     ///         match action {
     ///             Action::CallFunction { name, .. } if name == "string.upper" => {
     ///                 Decision::Allow

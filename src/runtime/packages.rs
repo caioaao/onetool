@@ -1,9 +1,9 @@
 //! Lua package path management.
 //!
 //! Provides utilities for extending the Lua `package.path` so that `require()` can
-//! find external modules. Note that `require()` is blocked by the default sandbox
-//! policy — you must use a custom policy (or [`DangerousAllowAllPolicy`](super::sandbox::policy::DangerousAllowAllPolicy))
-//! to allow package loading.
+//! find external modules. Note that `require()` is an unsafe function blocked by the
+//! default `DenyAllPolicy` — you must use a custom policy (or [`DangerousAllowAllPolicy`](super::sandbox::policy::DangerousAllowAllPolicy))
+//! to allow `require()` calls.
 
 /// Appends additional search patterns to Lua's `package.path`.
 ///

@@ -493,7 +493,7 @@ pub fn wrap_unsafe_function<P: policy::Policy + 'static>(
             args: args.clone(),
         };
 
-        let decision = policy.check_access(&policy::Caller::Agent, &action);
+        let decision = policy.check_access(&action);
 
         // If denied: print reason to stderr, return nil as MultiValue
         if let policy::Decision::Deny(reason) = decision {
