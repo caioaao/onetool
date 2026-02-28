@@ -38,7 +38,7 @@
 //!
 //! # fn example() -> mlua::Result<()> {
 //! let lua = mlua::Lua::new();
-//! let policy = Arc::new(sandbox::policy::WhiteListPolicy::new(&["os"]));
+//! let policy = Arc::new(sandbox::policy::DenyAllPolicy{});
 //! sandbox::apply_with_policy(&lua, policy, None)?;
 //! # Ok(())
 //! # }
@@ -271,10 +271,10 @@ pub fn apply(lua: &mlua::Lua) -> mlua::Result<()> {
 ///
 /// # fn example() -> mlua::Result<()> {
 /// let lua = mlua::Lua::new();
-/// let policy = Arc::new(sandbox::policy::WhiteListPolicy::new(&["os"]));
+/// let policy = Arc::new(sandbox::policy::DenyAllPolicy{});
 /// sandbox::apply_with_policy(&lua, policy, None)?;
 ///
-/// // os.execute is wrapped - returns nil on denial (WhiteListPolicy allows it)
+/// // os.execute is wrapped - returns nil on denial
 /// let result: mlua::Value = lua.load("return os.execute('echo test')").eval()?;
 ///
 /// // os.time is safe - works without policy checks

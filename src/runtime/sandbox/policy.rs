@@ -51,44 +51,43 @@ impl Policy for DenyAllPolicy {
     }
 }
 
-/// Permissive policy that allows specific packages via an allowlist
+/// Permissive policy that allows **Unsafe** functions to execute
 ///
-/// This policy grants access only to packages explicitly listed in the allowlist.
-/// All other packages are denied.
+/// This policy grants access to policy-controlled **Unsafe** functions (like `os.execute`,
+/// `io.open`, etc.), while **Forbidden** functions (like `debug`, `coroutine`, `package`)
+/// remain completely blocked (set to nil).
+///
+/// # Function Categories
+/// - **Safe** functions: Always available (no policy check needed)
+/// - **Unsafe** functions: Allowed by this policy (normally require approval)
+/// - **Forbidden** functions: Still blocked (removed from environment)
+///
+/// # Security Implications
+/// **WARNING**: This policy bypasses access control for Unsafe functions and should
+/// only be used in trusted environments:
+/// - During development and testing
+/// - In completely trusted environments
+/// - When you need filesystem/process access but still want Forbidden APIs blocked
 ///
 /// # Example
-/// ```
-/// use onetool::runtime::sandbox::policy::WhiteListPolicy;
+/// ```ignore
+/// use onetool::runtime::sandbox;
+/// use onetool::runtime::sandbox::policy::DangerousAllowAllPolicy;
 ///
-/// let policy = WhiteListPolicy::new(&["io", "os"]);
+/// let lua = mlua::Lua::new();
+/// sandbox::apply_with_policy(&lua, DangerousAllowAllPolicy)?;
+///
+/// // Unsafe functions now work
+/// lua.load("os.execute('echo hello')").exec()?;  // ✓ Allowed
+///
+/// // Forbidden functions are still blocked
+/// let result: mlua::Value = lua.load("return debug").eval()?;
+/// assert!(matches!(result, mlua::Value::Nil));  // ✓ Still nil
 /// ```
-pub struct WhiteListPolicy {
-    allowed_packages: std::collections::HashSet<String>,
-}
+pub struct DangerousAllowAllPolicy;
 
-impl WhiteListPolicy {
-    /// Creates a new permissive policy with the given allowlist
-    ///
-    /// # Arguments
-    /// * `allowed` - Slice of package names that should be allowed
-    pub fn new(allowed: &[&str]) -> Self {
-        Self {
-            allowed_packages: allowed.iter().map(|s| s.to_string()).collect(),
-        }
-    }
-}
-
-impl Policy for WhiteListPolicy {
-    fn check_access(&self, _scope: &Caller, action: &Action) -> Decision {
-        match action {
-            Action::LoadPackage(name) => {
-                if self.allowed_packages.contains(name) {
-                    Decision::Allow
-                } else {
-                    Decision::Deny(format!("Package '{}' not in allowlist", name))
-                }
-            }
-            Action::CallFunction { name: _, args: _ } => Decision::Allow,
-        }
+impl Policy for DangerousAllowAllPolicy {
+    fn check_access(&self, _: &Caller, _: &Action) -> Decision {
+        Decision::Allow
     }
 }
