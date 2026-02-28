@@ -167,12 +167,17 @@ fn example_with_runtime() -> Result<(), Box<dyn std::error::Error>> {
 
 fn example_new_with() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Method 2: Extension via new_with() ===\n");
-    println!("This method sets up functions BEFORE sandboxing is applied.");
+    println!("This method applies sandboxing FIRST, then registers custom functions.");
     println!("Best for: Complex initialization, framework adapters\n");
 
     let lua = mlua::Lua::new();
 
-    // Register ALL functions before sandboxing
+    // CRITICAL: Apply sandboxing FIRST (it clears globals, so custom functions must come after)
+    runtime::sandbox::apply(&lua)?;
+    println!("✓ Applied sandboxing");
+
+    // Register ALL custom functions AFTER sandboxing
+    // (functions registered before would be destroyed by globals.clear())
     let http_fetch = lua.create_function(|_, url: String| {
         simulate_http_fetch(&url).map_err(|e| mlua::Error::RuntimeError(e))
     })?;
@@ -249,11 +254,7 @@ fn example_new_with() -> Result<(), Box<dyn std::error::Error>> {
             },
         )?;
     }
-    println!("✓ Registered documentation");
-
-    // CRITICAL: Apply sandboxing after setup
-    runtime::sandbox::apply(&lua)?;
-    println!("✓ Applied sandboxing\n");
+    println!("✓ Registered documentation\n");
 
     let repl = Repl::new_with(lua)?;
 

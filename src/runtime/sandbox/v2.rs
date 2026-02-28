@@ -35,6 +35,8 @@ pub enum ApiEntry {
         name: &'static str,
         entries: &'static [ApiEntry],
     },
+    /// A safe module - copy entire module without inspection
+    SafeModule { name: &'static str },
 }
 
 impl ApiEntry {
@@ -50,6 +52,10 @@ impl ApiEntry {
             name,
             safety: SafetyLevel::Safe,
         }
+    }
+
+    pub const fn safe_module(name: &'static str) -> Self {
+        ApiEntry::SafeModule { name }
     }
 }
 
@@ -90,7 +96,12 @@ pub const DEFAULT_API_SPEC: ApiSpec = &[
             ApiEntry::unsafe_function("type"),
         ],
     },
-    // Global functions (top-level)
+    // Safe modules (copy entire table)
+    ApiEntry::safe_module("string"),
+    ApiEntry::safe_module("table"),
+    ApiEntry::safe_module("math"),
+    ApiEntry::safe_module("utf8"),
+    // Unsafe global functions (top-level)
     ApiEntry::unsafe_function("load"),
     ApiEntry::unsafe_function("loadstring"),
     ApiEntry::unsafe_function("loadfile"),
@@ -103,9 +114,19 @@ pub const DEFAULT_API_SPEC: ApiSpec = &[
     ApiEntry::unsafe_function("rawequal"),
     ApiEntry::unsafe_function("rawlen"),
     ApiEntry::unsafe_function("collectgarbage"),
+    // Safe global functions
     ApiEntry::safe_function("type"),
     ApiEntry::safe_function("tonumber"),
     ApiEntry::safe_function("tostring"),
+    ApiEntry::safe_function("print"),
+    ApiEntry::safe_function("ipairs"),
+    ApiEntry::safe_function("pairs"),
+    ApiEntry::safe_function("next"),
+    ApiEntry::safe_function("select"),
+    ApiEntry::safe_function("assert"),
+    ApiEntry::safe_function("error"),
+    ApiEntry::safe_function("pcall"),
+    ApiEntry::safe_function("xpcall"),
 ];
 
 /// Process API entries from a source table and return a new processed table
@@ -174,6 +195,12 @@ fn process_entries<P: policy::Policy + 'static>(
                     )?;
 
                     target_table.set(*name, processed_module)?;
+                }
+            }
+            ApiEntry::SafeModule { name } => {
+                // Copy entire module without inspection
+                if let Ok(original_module) = source_table.get::<mlua::Table>(*name) {
+                    target_table.set(*name, original_module)?;
                 }
             }
         }

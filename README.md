@@ -308,7 +308,15 @@ let tool = tool_definition::genai_tool();
 
 ### Safe by Design
 
-- **Sandboxed Lua 5.4 runtime** - Dangerous operations blocked at the language level
+- **Sandboxed Lua 5.4 runtime** - Policy-based access control with three-tier security model
+
+### Three-Tier Security Model
+
+The runtime uses policy-based access control to categorize all Lua functions:
+
+- **Safe functions**: Work without policy checks (e.g., `os.time`, `string.*`, `math.*`)
+- **Unsafe functions**: Wrapped with policy checks, return `nil` on denial (e.g., `os.execute`, `io.open`)
+- **Forbidden functions**: Removed entirely (e.g., `debug`, `coroutine`, `package`)
 
 ### What's Available
 
@@ -321,13 +329,13 @@ let tool = tool_definition::genai_tool();
 
 ### What's Blocked
 
-- File I/O (`io`, `file`)
+- File I/O (`io.*`) - wrapped, returns `nil` by default
 - Network access
-- Code loading (`require`, `dofile`, `load*`)
-- OS commands (`os.execute`, `os.getenv`, etc.)
-- Metatable manipulation
-- Coroutines
-- Garbage collection control
+- Code loading (`require`, `dofile`, `load*`) - wrapped, returns `nil` by default
+- OS commands (`os.execute`, `os.getenv`, etc.) - wrapped, returns `nil` by default
+- Metatable manipulation - wrapped, returns `nil` by default
+- Coroutines - removed entirely
+- Garbage collection control - wrapped, returns `nil` by default
 
 ## Key Features
 
@@ -434,7 +442,7 @@ let result = repl.eval("return greet('World')")?;
 - Functions don't need to interact with sandboxing
 - Simpler initialization flow
 
-#### Method 2: Pre-Sandboxing (`new_with()`)
+#### Method 2: Pre-Sandboxed Runtime (`new_with()`)
 
 Best for complex initialization scenarios:
 
@@ -443,26 +451,26 @@ use onetool::{Repl, runtime};
 
 let lua = mlua::Lua::new();
 
-// Set up custom globals
-lua.globals().set("API_KEY", "secret")?;
+// Apply sandboxing FIRST
+runtime::sandbox::apply(&lua)?;
 
-// Register custom functions
+// Register custom functions AFTER sandboxing
+// (sandboxing clears globals, so custom functions must come after)
 let fetch = lua.create_function(|_, url: String| {
     // ... implementation
     Ok("response".to_string())
 })?;
 lua.globals().set("fetch", fetch)?;
 
-// Apply sandboxing AFTER custom setup
-runtime::sandbox::apply(&lua)?;
-
 let repl = Repl::new_with(lua)?;
 ```
 
 **Use when:**
-- Need to set up complex state before sandboxing
+- Need to set up complex custom functions
 - Custom functions require special initialization
 - Building framework adapters
+
+**Important:** Always apply sandboxing BEFORE registering custom functions, as sandboxing clears the globals table.
 
 ### Complete Example
 

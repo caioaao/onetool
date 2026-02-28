@@ -29,9 +29,9 @@
 //!
 //! # Security
 //!
-//! The sandboxed runtime blocks file I/O, network access, code loading, and OS command
-//! execution. Dangerous Lua globals are set to `nil`, causing attempts to use them to fail
-//! with "attempt to call a nil value" errors. See [`runtime::sandbox`] for details.
+//! The Lua runtime is sandboxed with policy-based access control. Unsafe functions
+//! (like `os.execute`, `io.open`) are wrapped and return `nil` on policy denial. Forbidden
+//! functions (like `debug`, `coroutine`) are removed entirely. See [`runtime::sandbox`] for details.
 //!
 //! # Key Modules
 //!

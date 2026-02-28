@@ -99,7 +99,7 @@ impl Repl {
 
     /// Creates a REPL with a custom Lua runtime.
     ///
-    /// Useful when you need to register custom globals or functions before sandboxing.
+    /// Useful when you need to register custom functions or globals.
     /// Note that sandboxing is NOT automatically applied to the provided runtime.
     ///
     /// # Example
@@ -109,8 +109,12 @@ impl Repl {
     ///
     /// # fn example() -> Result<(), mlua::Error> {
     /// let lua = mlua::Lua::new();
+    ///
+    /// // Apply sandboxing FIRST (it clears globals)
+    /// runtime::sandbox::apply(&lua)?;
+    ///
+    /// // Register custom functions AFTER sandboxing
     /// lua.globals().set("custom_value", 42)?;
-    /// runtime::sandbox::apply(&lua)?;  // Apply sandboxing manually
     ///
     /// let repl = Repl::new_with(lua)?;
     /// let outcome = repl.eval("return custom_value")?;
@@ -120,25 +124,23 @@ impl Repl {
     ///
     /// # Security Warning
     ///
-    /// When using `new_with()`, you MUST call `runtime::sandbox::apply()` to ensure
-    /// the runtime is properly sandboxed. Failing to do so exposes dangerous operations:
+    /// When using `new_with`, you are responsible for sandboxing the Lua runtime BEFORE
+    /// registering custom functions. The sandbox uses `globals.clear()` which will destroy
+    /// any globals registered before sandboxing is applied.
     ///
-    /// ```no_run
-    /// use onetool::{Repl, runtime};
+    /// **Recommended pattern**:
+    /// 1. Create Lua runtime
+    /// 2. Apply sandboxing with `runtime::sandbox::apply()`
+    /// 3. Register custom functions AFTER sandboxing
+    /// 4. Create REPL with `new_with()`
     ///
-    /// # fn example() -> Result<(), mlua::Error> {
-    /// let lua = mlua::Lua::new();
-    /// lua.globals().set("my_data", 42)?;
+    /// **Not recommended**:
+    /// 1. Create Lua runtime
+    /// 2. Register custom functions ← These will be destroyed by sandboxing!
+    /// 3. Apply sandboxing
+    /// 4. Create REPL
     ///
-    /// // CRITICAL: Apply sandboxing before creating REPL
-    /// runtime::sandbox::apply(&lua)?;
-    ///
-    /// let repl = Repl::new_with(lua)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// If you don't need pre-sandboxing setup, prefer [`Repl::new()`] with
+    /// If you don't need custom functions at initialization, prefer [`Repl::new()`] with
     /// [`with_runtime()`](Repl::with_runtime) for simpler initialization.
     pub fn new_with(runtime: mlua::Lua) -> Result<Self, mlua::Error> {
         let runtime = Mutex::new(runtime);
@@ -387,9 +389,12 @@ mod tests {
     #[test]
     fn test_new_applies_sandboxing() {
         let repl = create_repl();
-        let eval = repl.eval("io.open('test.txt', 'r')").unwrap();
+        let eval = repl.eval("return io.open('test.txt', 'r')").unwrap();
 
-        assert_error_contains(&eval.result, "nil");
+        // With policy-based sandbox, io.open returns nil (denied by DenyAllPolicy)
+        assert!(eval.result.is_ok());
+        let result = eval.result.unwrap();
+        assert!(result[0].to_lowercase().contains("nil"));
     }
 
     // === B. Successful Evaluation Tests ===
@@ -628,9 +633,12 @@ mod tests {
     #[test]
     fn test_eval_blocked_function_error() {
         let repl = create_repl();
-        let eval = repl.eval(r#"io.open("file.txt")"#).unwrap();
+        let eval = repl.eval(r#"return io.open("file.txt")"#).unwrap();
 
-        assert_error_contains(&eval.result, "nil");
+        // Now returns nil instead of erroring
+        assert!(eval.result.is_ok());
+        let result = eval.result.unwrap();
+        assert!(result[0].to_lowercase().contains("nil"));
     }
 
     #[test]

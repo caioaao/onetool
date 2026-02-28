@@ -1,19 +1,48 @@
-//! Lua runtime sandboxing.
+//! Lua runtime sandboxing with policy-based access control.
 //!
-//! This module implements security restrictions for Lua runtime environments:
-//! - **[`apply`]**: Sets dangerous Lua globals to `nil` (blocks all access)
-//! - **[`wrap_unsafe_call`]**: Wraps functions with policy-based access control (conditional access)
+//! This module implements security restrictions for Lua runtime environments.
+//! Functions are categorized into three tiers:
 //!
-//! Attempts to use blocked features will fail with "attempt to call a nil value" errors.
+//! - **Safe**: No policy check, copied directly (e.g., `os.time`, `string.*`, `math.*`)
+//! - **Unsafe**: Wrapped with policy-based access control (e.g., `os.execute`, `io.open`)
+//! - **Forbidden**: Removed entirely (e.g., `debug`, `coroutine`, `package`)
 //!
-//! # Blocked Features (by [`apply`])
+//! # Quick Start
 //!
-//! - **File I/O**: `io`, `file`
-//! - **Code loading**: `require`, `dofile`, `load`, `loadfile`, `loadstring`, `package`
-//! - **OS commands**: `os.execute`, `os.getenv`, `os.remove`, `os.rename`, etc.
-//! - **Metatable manipulation**: `getmetatable`, `setmetatable`, `rawset`, `rawget`, `rawequal`, `rawlen`
-//! - **Memory control**: `collectgarbage`
-//! - **Coroutines**: `coroutine`
+//! Use [`apply`] for default sandboxing with `DenyAllPolicy`:
+//!
+//! ```
+//! use onetool::runtime::sandbox;
+//!
+//! # fn example() -> mlua::Result<()> {
+//! let lua = mlua::Lua::new();
+//! sandbox::apply(&lua)?;  // Uses DenyAllPolicy
+//!
+//! // Safe functions work
+//! let time: i64 = lua.load("return os.time()").eval()?;
+//!
+//! // Unsafe functions return nil on denial
+//! let result: mlua::Value = lua.load("return os.execute('echo test')").eval()?;
+//! assert!(matches!(result, mlua::Value::Nil));
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Custom Policies
+//!
+//! For custom access control, use [`v2::apply`] directly:
+//!
+//! ```
+//! use std::sync::Arc;
+//! use onetool::runtime::sandbox;
+//!
+//! # fn example() -> mlua::Result<()> {
+//! let lua = mlua::Lua::new();
+//! let policy = Arc::new(sandbox::policy::WhiteListPolicy::new(&["os"]));
+//! sandbox::v2::apply(&lua, policy, None)?;
+//! # Ok(())
+//! # }
+//! ```
 //!
 //! # Allowed Features
 //!
@@ -24,30 +53,28 @@
 //! - **Safe OS functions**: `os.time`, `os.date`
 //! - **Basic operations**: `print`, `type`, `tostring`, `tonumber`, `ipairs`, `pairs`, `next`, `select`, `assert`, `error`, `pcall`, `xpcall`
 //!
-//! # Example
+//! # Blocked Features
 //!
-//! ```
-//! use onetool::runtime::sandbox;
-//!
-//! # fn example() -> mlua::Result<()> {
-//! let lua = mlua::Lua::new();
-//! sandbox::apply(&lua)?;
-//!
-//! // This will fail
-//! let result = lua.load("io.open('test.txt')").exec();
-//! assert!(result.is_err());
-//! # Ok(())
-//! # }
-//! ```
+//! - **File I/O**: `io.*` (wrapped, requires policy allowance)
+//! - **Code loading**: `require`, `dofile`, `load`, `loadfile`, `loadstring` (wrapped)
+//! - **OS commands**: `os.execute`, `os.getenv`, `os.remove`, `os.rename` (wrapped)
+//! - **Metatable manipulation**: `getmetatable`, `setmetatable`, `rawset`, `rawget` (wrapped)
+//! - **Forbidden entirely**: `debug`, `coroutine`, `package`
 
 pub mod policy;
 pub mod v2;
 
 use crate::runtime::docs::{self, LuaDoc, LuaDocTyp};
 
-/// Applies sandboxing to an existing Lua runtime.
+/// Applies sandboxing to an existing Lua runtime using policy-based access control.
 ///
-/// Sandboxed packages are added to a `vault` so it can be accessed by priviledged actors
+/// This convenience wrapper uses `DenyAllPolicy` by default, which blocks all unsafe
+/// function calls. Functions are categorized as:
+/// - **Safe**: No policy check, copied directly (e.g., os.time, os.date, string.*, math.*)
+/// - **Unsafe**: Wrapped with policy check, returns nil on denial (e.g., os.execute, io.open)
+/// - **Forbidden**: Removed entirely (debug, coroutine, package)
+///
+/// For custom policies, use `v2::apply()` directly.
 ///
 /// # Example
 ///
@@ -58,44 +85,18 @@ use crate::runtime::docs::{self, LuaDoc, LuaDocTyp};
 /// let lua = mlua::Lua::new();
 /// lua.globals().set("custom_value", 42)?;
 /// sandbox::apply(&lua)?;
+///
+/// // Custom globals registered before sandboxing are cleared!
+/// // Register custom functions AFTER sandboxing:
+/// lua.globals().set("my_function", lua.create_function(|_, ()| Ok(42))?)?;
 /// # Ok(())
 /// # }
 /// ```
 pub fn apply(lua: &mlua::Lua) -> mlua::Result<()> {
-    // First, preserve safe os functions before blocking
-    sandbox_os_module(lua)?;
-
-    let globals = lua.globals();
-
-    // File I/O
-    globals.set("io", mlua::Value::Nil)?;
-    globals.set("file", mlua::Value::Nil)?;
-
-    // Code loading
-    globals.set("require", mlua::Value::Nil)?;
-    globals.set("dofile", mlua::Value::Nil)?;
-    globals.set("load", mlua::Value::Nil)?;
-    globals.set("loadfile", mlua::Value::Nil)?;
-    globals.set("loadstring", mlua::Value::Nil)?;
-    globals.set("package", mlua::Value::Nil)?;
-
-    // Debug/introspection (Lua::new() already excludes debug, but be explicit)
-    globals.set("debug", mlua::Value::Nil)?;
-    globals.set("rawget", mlua::Value::Nil)?;
-    globals.set("rawset", mlua::Value::Nil)?;
-    globals.set("rawequal", mlua::Value::Nil)?;
-    globals.set("rawlen", mlua::Value::Nil)?;
-    globals.set("getmetatable", mlua::Value::Nil)?;
-    globals.set("setmetatable", mlua::Value::Nil)?;
-
-    // Memory control
-    globals.set("collectgarbage", mlua::Value::Nil)?;
-
-    // Coroutines
-    globals.set("coroutine", mlua::Value::Nil)?;
-
+    use std::sync::Arc;
+    let policy = Arc::new(policy::DenyAllPolicy);
+    v2::apply(lua, policy, None)?;
     register_docs(lua)?;
-
     Ok(())
 }
 
@@ -161,164 +162,118 @@ fn register_docs(lua: &mlua::Lua) -> mlua::Result<()> {
     Ok(())
 }
 
-fn sandbox_os_module(lua: &mlua::Lua) -> mlua::Result<()> {
-    let globals = lua.globals();
-    let os_table: mlua::Table = globals.get("os")?;
-
-    // Extract safe functions before removing the module
-    let os_time: mlua::Function = os_table.get("time")?;
-    let os_date: mlua::Function = os_table.get("date")?;
-
-    // Create restricted os table with only safe functions
-    let safe_os = lua.create_table()?;
-    safe_os.set("time", os_time)?;
-    safe_os.set("date", os_date)?;
-
-    globals.set("os", safe_os)?;
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::runtime::output::with_output_capture;
 
-    use super::*;
-
     #[test]
-    fn blocked_io_module() {
+    fn test_safe_functions_work() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
 
-        // Accessing io.open should fail since io is set to nil
-        let result = lua.load("local f = io.open('test.txt', 'r')").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
+        // Safe functions work
+        let time: i64 = lua.load("return os.time()").eval().unwrap();
+        assert!(time > 0);
+
+        let date: String = lua.load("return os.date('%Y')").eval().unwrap();
+        assert_eq!(date.len(), 4);
+
+        let result: i32 = lua.load("return tonumber('42')").eval().unwrap();
+        assert_eq!(result, 42);
     }
 
     #[test]
-    fn blocked_os_execute() {
+    fn test_safe_modules_work() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
 
-        // os.execute should not exist in sandboxed os table
-        let result = lua.load("os.execute('ls')").exec();
-        assert!(result.is_err());
+        let upper: String = lua.load("return string.upper('hello')").eval().unwrap();
+        assert_eq!(upper, "HELLO");
+
+        let sqrt: f64 = lua.load("return math.sqrt(16)").eval().unwrap();
+        assert_eq!(sqrt, 4.0);
+
+        let concat: String = lua.load("return table.concat({'a', 'b', 'c'}, ',')").eval().unwrap();
+        assert_eq!(concat, "a,b,c");
     }
 
     #[test]
-    fn blocked_os_getenv() {
+    fn test_unsafe_functions_return_nil() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
 
-        // os.getenv should not exist in sandboxed os table
-        let result = lua.load("os.getenv('PATH')").exec();
-        assert!(result.is_err());
+        // With DenyAllPolicy, unsafe functions return nil
+        let result: mlua::Value = lua.load("return os.execute('echo test')").eval().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+
+        let result: mlua::Value = lua.load("return io.open('test.txt', 'r')").eval().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+
+        let result: mlua::Value = lua.load("return load('return 1')").eval().unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
     }
 
     #[test]
-    fn allowed_os_time() {
+    fn test_forbidden_globals_are_nil() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
 
-        // os.time should work
-        let (result, output) =
-            with_output_capture(&lua, |lua| lua.load("print(type(os.time()))").exec()).unwrap();
+        let debug: mlua::Value = lua.load("return debug").eval().unwrap();
+        assert!(matches!(debug, mlua::Value::Nil));
 
-        assert!(result.is_ok());
-        assert_eq!(output.len(), 1);
-        assert!(output[0].contains("number"));
+        let coroutine: mlua::Value = lua.load("return coroutine").eval().unwrap();
+        assert!(matches!(coroutine, mlua::Value::Nil));
+
+        let package: mlua::Value = lua.load("return package").eval().unwrap();
+        assert!(matches!(package, mlua::Value::Nil));
     }
 
     #[test]
-    fn allowed_os_date() {
+    fn test_basic_lua_functions_work() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
 
-        // os.date should work
+        // Test ipairs, pairs, select, etc.
         let (result, output) = with_output_capture(&lua, |lua| {
-            lua.load("print(type(os.date('%Y-%m-%d')))").exec()
+            lua.load(
+                r#"
+                local t = {10, 20, 30}
+                for i, v in ipairs(t) do
+                    print(v)
+                end
+            "#,
+            )
+            .exec()
         })
         .unwrap();
 
         assert!(result.is_ok());
-        assert_eq!(output.len(), 1);
-        assert!(output[0].contains("string"));
+        assert_eq!(output.len(), 3);
     }
 
     #[test]
-    fn blocked_require() {
+    fn test_custom_globals_after_sandboxing_persist() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
 
-        // require should be nil
-        let result = lua.load("require('os')").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
+        // Register custom function AFTER sandboxing
+        lua.globals()
+            .set("custom", lua.create_function(|_, ()| Ok(42)).unwrap())
+            .unwrap();
+
+        let result: i32 = lua.load("return custom()").eval().unwrap();
+        assert_eq!(result, 42);
     }
 
     #[test]
-    fn blocked_load() {
+    fn test_docs_registered() {
         let lua = mlua::Lua::new();
         apply(&lua).unwrap();
 
-        // load should be nil
-        let result = lua.load("load('print(1)')()").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
-    }
-
-    #[test]
-    fn blocked_dofile() {
-        let lua = mlua::Lua::new();
-        apply(&lua).unwrap();
-
-        // dofile should be nil
-        let result = lua.load("dofile('/etc/passwd')").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
-    }
-
-    #[test]
-    fn blocked_collectgarbage() {
-        let lua = mlua::Lua::new();
-        apply(&lua).unwrap();
-
-        // collectgarbage should be nil
-        let result = lua.load("collectgarbage('collect')").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
-    }
-
-    #[test]
-    fn blocked_coroutine() {
-        let lua = mlua::Lua::new();
-        apply(&lua).unwrap();
-
-        // coroutine should be nil
-        let result = lua.load("coroutine.create(function() end)").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
-    }
-
-    #[test]
-    fn blocked_rawset() {
-        let lua = mlua::Lua::new();
-        apply(&lua).unwrap();
-
-        // rawset should be nil
-        let result = lua.load("rawset(_G, 'x', 1)").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
-    }
-
-    #[test]
-    fn blocked_getmetatable() {
-        let lua = mlua::Lua::new();
-        apply(&lua).unwrap();
-
-        // getmetatable should be nil
-        let result = lua.load("getmetatable('')").exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nil"));
+        // Verify docs table exists
+        let docs_type: String = lua.load("return type(docs)").eval().unwrap();
+        assert_eq!(docs_type, "table");
     }
 }
