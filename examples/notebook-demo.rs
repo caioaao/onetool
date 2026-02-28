@@ -22,16 +22,82 @@
 //! ## Architecture
 //!
 //! This example demonstrates three key onetool concepts:
-//! 1. **REPL creation**: `onetool::Repl::new()` for sandboxed Lua runtime
+//! 1. **REPL creation**: `onetool::Repl::new_with_policy()` with an interactive permission policy
 //! 2. **GenAI integration**: `onetool::genai::LuaRepl` adapter for tool handling
 //! 3. **Agentic loops**: Iterative tool calling until final text response
 //!
 //! The notebook formatting is purely cosmetic - focus on the core loop in main().
 
+use std::collections::HashSet;
 use std::io::{self, IsTerminal, Write};
+use std::sync::{Arc, Mutex};
+
+use onetool::runtime::sandbox::policy::{Action, Decision, Policy};
 use tracing_subscriber::EnvFilter;
 
 const MODEL: &str = "gpt-4o-mini";
+
+// ============================================================================
+// Interactive Permission Policy
+// ============================================================================
+
+struct AskUserPolicy {
+    use_colors: bool,
+    always_allowed: Mutex<HashSet<String>>,
+}
+
+impl AskUserPolicy {
+    fn new(use_colors: bool) -> Self {
+        Self {
+            use_colors,
+            always_allowed: Mutex::new(HashSet::new()),
+        }
+    }
+
+    fn prompt_user(&self, label: &str) -> Decision {
+        {
+            let allowed = self.always_allowed.lock().unwrap();
+            if allowed.contains(label) {
+                return Decision::Allow;
+            }
+        }
+
+        let yellow = if self.use_colors { "\x1b[33m" } else { "" };
+        let bold = if self.use_colors { "\x1b[1m" } else { "" };
+        let reset = if self.use_colors { "\x1b[0m" } else { "" };
+
+        eprint!(
+            "{}{}⚠️  Allow {}?{} [y]es / [n]o / [a]lways: ",
+            bold, yellow, label, reset
+        );
+        io::stderr().flush().ok();
+
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_err() {
+            return Decision::Deny("Failed to read input".to_string());
+        }
+
+        match input.trim().to_lowercase().as_str() {
+            "y" | "yes" => Decision::Allow,
+            "a" | "always" => {
+                self.always_allowed
+                    .lock()
+                    .unwrap()
+                    .insert(label.to_string());
+                Decision::Allow
+            }
+            _ => Decision::Deny(format!("User denied access to {}", label)),
+        }
+    }
+}
+
+impl Policy for AskUserPolicy {
+    fn check_access(&self, action: &Action) -> Decision {
+        match action {
+            Action::CallFunction { name, .. } => self.prompt_user(name),
+        }
+    }
+}
 
 // ============================================================================
 // Main Demo
@@ -57,8 +123,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     print_banner(use_colors);
 
-    // Create the Lua REPL (sandboxed environment)
-    let repl = onetool::Repl::new().expect("Failed to create REPL");
+    // Create the Lua REPL with interactive permission policy
+    let policy = Arc::new(AskUserPolicy::new(use_colors));
+    let repl = onetool::Repl::new_with_policy(policy).expect("Failed to create REPL");
 
     let genai_client = genai::Client::default();
 
