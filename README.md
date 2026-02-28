@@ -19,17 +19,17 @@ LLMs are already trained on programming languages. By giving them code execution
 **Basic REPL only** (no LLM framework):
 ```toml
 [dependencies]
-onetool = "0.0.1-alpha.6"
+onetool = "0.0.1-alpha.7"
 ```
 
 **With a framework adapter:**
 ```toml
 # Pick one (or more):
-onetool = { version = "0.0.1-alpha.6", features = ["genai"] }
-onetool = { version = "0.0.1-alpha.6", features = ["mistralrs"] }
-onetool = { version = "0.0.1-alpha.6", features = ["rig"] }
-onetool = { version = "0.0.1-alpha.6", features = ["aisdk"] }
-onetool = { version = "0.0.1-alpha.6", features = ["mcp"] }
+onetool = { version = "0.0.1-alpha.7", features = ["genai"] }
+onetool = { version = "0.0.1-alpha.7", features = ["mistralrs"] }
+onetool = { version = "0.0.1-alpha.7", features = ["rig"] }
+onetool = { version = "0.0.1-alpha.7", features = ["aisdk"] }
+onetool = { version = "0.0.1-alpha.7", features = ["mcp"] }
 ```
 
 **Feature flags:**
@@ -150,7 +150,7 @@ cargo run --features mcp --example mcp-basic             # MCP stdio server
 
 **This is still a toy project.** Use with care - everything may break, and I might decide to change everything tomorrow.
 
-- **Version**: 0.0.1-alpha.6
+- **Version**: 0.0.1-alpha.7
 - **API Stability**: Expect breaking changes
 - **Production Ready**: No
 
