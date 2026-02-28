@@ -1,5 +1,5 @@
-use crate::runtime::{self, output};
-use std::sync::Mutex;
+use crate::runtime::{self, output, sandbox};
+use std::sync::{Arc, Mutex};
 
 /// Errors that can occur during REPL operations.
 #[derive(Debug)]
@@ -139,13 +139,105 @@ impl Repl {
     /// 2. Register custom functions ← These will be destroyed by sandboxing!
     /// 3. Apply sandboxing
     /// 4. Create REPL
-    ///
-    /// If you don't need custom functions at initialization, prefer [`Repl::new()`] with
-    /// [`with_runtime()`](Repl::with_runtime) for simpler initialization.
     pub fn new_with(runtime: mlua::Lua) -> Result<Self, mlua::Error> {
         let runtime = Mutex::new(runtime);
 
         Ok(Self { runtime })
+    }
+
+    /// Creates a sandboxed REPL with a custom access control policy.
+    ///
+    /// This constructor automatically creates a fresh Lua runtime and applies policy-based
+    /// sandboxing, giving you fine-grained control over which unsafe operations are allowed.
+    ///
+    /// # When to Use Each Constructor
+    ///
+    /// - [`new()`](Repl::new) - Default sandboxing (blocks all unsafe operations)
+    /// - **`new_with_policy()`** - Custom policy for selective unsafe operation control
+    /// - [`new_with()`](Repl::new_with) - Manual sandboxing and custom functions
+    ///
+    /// Use this constructor when you need to allow specific unsafe operations while blocking
+    /// others. For example, you might allow filesystem reads but block writes, or allow
+    /// specific system commands while denying others.
+    ///
+    /// # Parameters
+    ///
+    /// * `policy` - An [`Arc`]-wrapped policy implementing [`Policy`](sandbox::policy::Policy).
+    ///              The policy's `check_access()` method is called for each unsafe operation.
+    ///
+    /// # Example: Custom Policy
+    ///
+    /// ```
+    /// use onetool::{Repl, runtime::sandbox::policy::{Policy, Caller, Action, Decision}};
+    /// use std::sync::Arc;
+    ///
+    /// # fn example() -> Result<(), mlua::Error> {
+    /// // Policy that only allows string.upper but blocks other unsafe operations
+    /// struct SelectivePolicy;
+    ///
+    /// impl Policy for SelectivePolicy {
+    ///     fn check_access(&self, _caller: &Caller, action: &Action) -> Decision {
+    ///         match action {
+    ///             Action::CallFunction { name, .. } if name == "string.upper" => {
+    ///                 Decision::Allow
+    ///             }
+    ///             _ => Decision::Deny("Not in allowlist".to_string())
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let repl = Repl::new_with_policy(Arc::new(SelectivePolicy))?;
+    ///
+    /// // Allowed operation succeeds
+    /// let outcome = repl.eval(r#"return string.upper("hello")"#)?;
+    /// assert!(outcome.result.unwrap()[0].contains("HELLO"));
+    ///
+    /// // Blocked operation returns nil
+    /// let outcome = repl.eval(r#"return io.open("file.txt")"#)?;
+    /// assert!(outcome.result.unwrap()[0].to_lowercase().contains("nil"));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Combining with Custom Functions
+    ///
+    /// You can use [`with_runtime()`](Repl::with_runtime) to add custom Rust functions
+    /// after creating a policy-based REPL:
+    ///
+    /// ```
+    /// use onetool::{Repl, runtime::sandbox::policy::DenyAllPolicy};
+    /// use std::sync::Arc;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let repl = Repl::new_with_policy(Arc::new(DenyAllPolicy))?;
+    ///
+    /// // Add custom functions after sandboxing
+    /// repl.with_runtime(|lua| {
+    ///     let greet = lua.create_function(|_, name: String| {
+    ///         Ok(format!("Hello, {}!", name))
+    ///     })?;
+    ///     lua.globals().set("greet", greet)?;
+    ///     Ok(())
+    /// })?;
+    ///
+    /// let outcome = repl.eval(r#"return greet("World")"#)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`Policy`](sandbox::policy::Policy) trait - Implement custom access control
+    /// - [`DenyAllPolicy`](sandbox::policy::DenyAllPolicy) - Built-in restrictive policy
+    /// - [`DangerousAllowAllPolicy`](sandbox::policy::DangerousAllowAllPolicy) - Built-in permissive policy (use with caution)
+    /// - [`runtime::sandbox::apply_with_policy()`] - Low-level policy application API
+    /// - [`with_runtime()`](Repl::with_runtime) - Add custom functions post-sandboxing
+    pub fn new_with_policy<P: sandbox::policy::Policy + 'static>(
+        policy: Arc<P>,
+    ) -> Result<Self, mlua::Error> {
+        let runtime = mlua::Lua::new();
+        sandbox::apply_with_policy(&runtime, policy, None)?;
+        Self::new_with(runtime)
     }
 
     /// Evaluates Lua code and captures output.
