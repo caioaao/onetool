@@ -15,7 +15,7 @@ pub enum Action {
 
 /// Decision result from an access policy check
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AccessDecision {
+pub enum Decision {
     /// Access is granted
     Allow,
     /// Access is denied with a reason
@@ -36,7 +36,7 @@ pub trait Policy: Send + Sync {
     /// # Returns
     /// `AccessDecision::Allow` if the action should be permitted,
     /// `AccessDecision::Deny(reason)` otherwise
-    fn check_access(&self, scope: &Caller, action: &Action) -> AccessDecision;
+    fn check_access(&self, scope: &Caller, action: &Action) -> Decision;
 }
 
 /// Strict policy that denies all access requests
@@ -46,8 +46,8 @@ pub trait Policy: Send + Sync {
 pub struct DenyAllPolicy;
 
 impl Policy for DenyAllPolicy {
-    fn check_access(&self, _: &Caller, _: &Action) -> AccessDecision {
-        AccessDecision::Deny("Access denied by strict policy".to_string())
+    fn check_access(&self, _: &Caller, _: &Action) -> Decision {
+        Decision::Deny("Access denied by strict policy".to_string())
     }
 }
 
@@ -58,7 +58,7 @@ impl Policy for DenyAllPolicy {
 ///
 /// # Example
 /// ```
-/// use onetool::runtime::policy::WhiteListPolicy;
+/// use onetool::runtime::sandbox::policy::WhiteListPolicy;
 ///
 /// let policy = WhiteListPolicy::new(&["io", "os"]);
 /// ```
@@ -79,16 +79,16 @@ impl WhiteListPolicy {
 }
 
 impl Policy for WhiteListPolicy {
-    fn check_access(&self, _scope: &Caller, action: &Action) -> AccessDecision {
+    fn check_access(&self, _scope: &Caller, action: &Action) -> Decision {
         match action {
             Action::LoadPackage(name) => {
                 if self.allowed_packages.contains(name) {
-                    AccessDecision::Allow
+                    Decision::Allow
                 } else {
-                    AccessDecision::Deny(format!("Package '{}' not in allowlist", name))
+                    Decision::Deny(format!("Package '{}' not in allowlist", name))
                 }
             }
-            Action::CallFunction { name: _, args: _ } => AccessDecision::Allow,
+            Action::CallFunction { name: _, args: _ } => Decision::Allow,
         }
     }
 }

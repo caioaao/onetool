@@ -8,13 +8,13 @@ use std::sync::Arc;
 // ============================================================================
 
 /// Safety level for a Lua function
+/// Note: Functions NOT in the spec are implicitly Forbidden (removed)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SafetyLevel {
     /// Function is safe - no policy check, copied directly
     Safe,
     /// Function requires policy check - wrapped with access control
     Unsafe,
-    // Note: Functions NOT in the spec are implicitly Forbidden (removed)
 }
 
 /// Entry in the API specification (recursive definition with embedded names)
@@ -205,12 +205,12 @@ fn process_entries<P: policy::Policy + 'static>(
 ///
 /// ```
 /// use std::sync::Arc;
-/// use onetool::runtime::{sandbox_v2, policy};
+/// use onetool::runtime::sandbox;
 ///
 /// # fn example() -> mlua::Result<()> {
 /// let lua = mlua::Lua::new();
-/// let policy = Arc::new(policy::DenyAllPolicy);
-/// sandbox_v2::apply(&lua, policy, None)?; // Use default spec
+/// let policy = Arc::new(sandbox::policy::DenyAllPolicy);
+/// sandbox::v2::apply(&lua, policy, None)?; // Use default spec
 ///
 /// // os.execute is wrapped - returns nil on denial
 /// let result: mlua::Value = lua.load("return os.execute('echo test')").eval()?;
@@ -268,7 +268,7 @@ pub fn wrap_unsafe_function<P: policy::Policy + 'static>(
         let decision = policy.check_access(&policy::Caller::Agent, &action);
 
         // If denied: print reason to stderr, return nil as MultiValue
-        if let policy::AccessDecision::Deny(reason) = decision {
+        if let policy::Decision::Deny(reason) = decision {
             eprintln!("Access denied: {}", reason);
             return Ok(mlua::MultiValue::from_vec(vec![mlua::Value::Nil]));
         }
@@ -282,7 +282,7 @@ pub fn wrap_unsafe_function<P: policy::Policy + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::policy::{AccessDecision, Action, Caller, Policy};
+    use crate::runtime::sandbox::policy::{Action, Caller, Policy};
     use std::sync::{Arc, Mutex};
 
     // ============================================================================
@@ -293,8 +293,8 @@ mod tests {
     struct AllowPolicy;
 
     impl Policy for AllowPolicy {
-        fn check_access(&self, _: &Caller, _: &Action) -> AccessDecision {
-            AccessDecision::Allow
+        fn check_access(&self, _: &Caller, _: &Action) -> policy::Decision {
+            policy::Decision::Allow
         }
     }
 
@@ -302,8 +302,8 @@ mod tests {
     struct DenyPolicy;
 
     impl Policy for DenyPolicy {
-        fn check_access(&self, _: &Caller, _: &Action) -> AccessDecision {
-            AccessDecision::Deny("test denial".to_string())
+        fn check_access(&self, _: &Caller, _: &Action) -> policy::Decision {
+            policy::Decision::Deny("test denial".to_string())
         }
     }
 
@@ -337,13 +337,13 @@ mod tests {
     }
 
     impl Policy for CapturingPolicy {
-        fn check_access(&self, caller: &Caller, action: &Action) -> AccessDecision {
+        fn check_access(&self, caller: &Caller, action: &Action) -> policy::Decision {
             if let Action::CallFunction { name, args } = action {
                 *self.captured_name.lock().unwrap() = Some(name.clone());
                 *self.captured_args_count.lock().unwrap() = Some(args.len());
                 *self.captured_caller.lock().unwrap() = Some(caller.clone());
             }
-            AccessDecision::Allow
+            policy::Decision::Allow
         }
     }
 

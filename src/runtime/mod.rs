@@ -26,9 +26,7 @@
 pub mod docs;
 pub mod output;
 pub mod packages;
-pub mod policy;
 pub mod sandbox;
-pub mod sandbox_v2;
 
 /// Creates a sandboxed Lua runtime.
 ///

@@ -40,8 +40,10 @@
 //! # }
 //! ```
 
+pub mod policy;
+pub mod v2;
+
 use crate::runtime::docs::{self, LuaDoc, LuaDocTyp};
-use crate::runtime::policy;
 use std::sync::Arc;
 
 /// Creates a package vault in the Lua registry to preserve stdlib packages.
@@ -224,11 +226,11 @@ fn sandbox_os_module(lua: &mlua::Lua) -> mlua::Result<()> {
 /// # Example
 /// ```
 /// use std::sync::Arc;
-/// use onetool::runtime::{sandbox, policy};
+/// use onetool::runtime::sandbox;
 ///
 /// # fn example() -> mlua::Result<()> {
 /// let lua = mlua::Lua::new();
-/// let policy = Arc::new(policy::DenyAllPolicy);
+/// let policy = Arc::new(sandbox::policy::DenyAllPolicy);
 ///
 /// // Wrap a global function
 /// sandbox::wrap_unsafe_call(&lua, &lua.globals(), "dofile", policy.clone())?;
@@ -265,7 +267,7 @@ pub fn wrap_unsafe_call<P: policy::Policy + 'static>(
         let decision = policy.check_access(&policy::Caller::Agent, &action);
 
         // If denied: print reason to stderr, return nil as MultiValue
-        if let policy::AccessDecision::Deny(reason) = decision {
+        if let policy::Decision::Deny(reason) = decision {
             eprintln!("Access denied: {}", reason);
             return Ok(mlua::MultiValue::from_vec(vec![mlua::Value::Nil]));
         }
@@ -284,7 +286,7 @@ pub fn wrap_unsafe_call<P: policy::Policy + 'static>(
 #[cfg(test)]
 mod tests {
     use crate::runtime::output::with_output_capture;
-    use crate::runtime::policy::{AccessDecision, Action, Caller, Policy};
+    use crate::runtime::sandbox::policy::{Action, Caller, Decision, Policy};
 
     use super::*;
 
@@ -296,8 +298,8 @@ mod tests {
     struct AllowPolicy;
 
     impl Policy for AllowPolicy {
-        fn check_access(&self, _: &Caller, _: &Action) -> AccessDecision {
-            AccessDecision::Allow
+        fn check_access(&self, _: &Caller, _: &Action) -> Decision {
+            Decision::Allow
         }
     }
 
@@ -305,8 +307,8 @@ mod tests {
     struct DenyPolicy;
 
     impl Policy for DenyPolicy {
-        fn check_access(&self, _: &Caller, _: &Action) -> AccessDecision {
-            AccessDecision::Deny("test denial".to_string())
+        fn check_access(&self, _: &Caller, _: &Action) -> Decision {
+            Decision::Deny("test denial".to_string())
         }
     }
 
@@ -334,12 +336,12 @@ mod tests {
     }
 
     impl Policy for CapturingPolicy {
-        fn check_access(&self, _: &Caller, action: &Action) -> AccessDecision {
+        fn check_access(&self, _: &Caller, action: &Action) -> Decision {
             if let Action::CallFunction { name, args } = action {
                 *self.captured_name.lock().unwrap() = Some(name.clone());
                 *self.captured_args_count.lock().unwrap() = Some(args.len());
             }
-            AccessDecision::Allow
+            Decision::Allow
         }
     }
 
