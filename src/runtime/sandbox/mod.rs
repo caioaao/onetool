@@ -60,22 +60,11 @@
 //! ];
 //! ```
 //!
-//! # Allowed Features
+//! # API Surface
 //!
-//! - **String manipulation**: `string.*`
-//! - **Table operations**: `table.*`
-//! - **Math functions**: `math.*`
-//! - **UTF-8 support**: `utf8.*`
-//! - **Safe OS functions**: `os.time`, `os.date`
-//! - **Basic operations**: `print`, `type`, `tostring`, `tonumber`, `ipairs`, `pairs`, `next`, `select`, `assert`, `error`, `pcall`, `xpcall`
-//!
-//! # Blocked Features
-//!
-//! - **File I/O**: `io.*` (wrapped, requires policy allowance)
-//! - **Code loading**: `require`, `dofile`, `load`, `loadfile`, `loadstring` (wrapped)
-//! - **OS commands**: `os.execute`, `os.getenv`, `os.remove`, `os.rename` (wrapped)
-//! - **Metatable manipulation**: `getmetatable`, `setmetatable`, `rawset`, `rawget` (wrapped)
-//! - **Forbidden entirely**: `debug`, `coroutine`, `package`
+//! The complete list of allowed, wrapped, and forbidden functions is defined in
+//! [`DEFAULT_API_SPEC`]. Functions not listed in the spec are implicitly forbidden
+//! (removed from the environment).
 
 pub mod policy;
 

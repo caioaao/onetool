@@ -1,34 +1,9 @@
 //! Runtime creation and sandboxing.
 //!
-//! This module provides functions to create sandboxed Lua runtimes. The sandbox
-//! restricts dangerous operations using policy-based access control while preserving
-//! safe Lua standard library functionality.
+//! This module provides functions to create sandboxed Lua runtimes and utilities
+//! for output capture, documentation registration, and package path management.
 //!
-//! # Security Model
-//!
-//! Sandboxing is applied using a three-tier policy-based approach:
-//! - **Safe** functions work without restrictions (e.g., `os.time`, `math.*`, `string.*`)
-//! - **Unsafe** functions are wrapped and return `nil` on policy denial (e.g., `os.execute`, `io.open`)
-//! - **Forbidden** functions are removed entirely (e.g., `debug`, `coroutine`, `package`)
-//!
-//! Sandboxed runtimes allow:
-//! - String manipulation (string.*)
-//! - Table operations (table.*)
-//! - Math functions (math.*)
-//! - UTF-8 support (utf8.*)
-//! - Safe OS functions (os.time, os.date)
-//! - Basic operations (print, ipairs, pairs, next, select, assert, error, pcall, xpcall)
-//!
-//! Sandboxed runtimes wrap (return nil by default):
-//! - File I/O (io.*)
-//! - Code loading (require, dofile, load, loadfile)
-//! - OS commands (os.execute, os.getenv, os.remove, os.rename)
-//! - Metatable manipulation (getmetatable, setmetatable, rawset, rawget)
-//!
-//! Completely blocked:
-//! - Coroutines (coroutine)
-//! - Debug facilities (debug)
-//! - Package management (package)
+//! See [`sandbox`] for the full security model and API specification.
 
 pub mod docs;
 pub mod output;

@@ -1,14 +1,22 @@
+/// The entity requesting access to a restricted operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
+    /// The LLM agent (code submitted via [`Repl::eval`](crate::Repl::eval))
     Agent,
+    /// A Lua package loaded via `require()`
     Package(String),
 }
 
+/// An action that requires policy approval before execution.
 #[derive(Debug, Clone)]
 pub enum Action {
+    /// Loading a Lua package via `require()`
     LoadPackage(String),
+    /// Calling a wrapped unsafe function (e.g., `os.execute`, `io.open`)
     CallFunction {
+        /// Qualified function name (e.g., `"os.execute"`, `"io.open"`)
         name: String,
+        /// Arguments passed to the function
         args: mlua::MultiValue,
     },
 }
@@ -34,8 +42,8 @@ pub trait Policy: Send + Sync {
     /// * `action` - The action being requested
     ///
     /// # Returns
-    /// `AccessDecision::Allow` if the action should be permitted,
-    /// `AccessDecision::Deny(reason)` otherwise
+    /// [`Decision::Allow`] if the action should be permitted,
+    /// [`Decision::Deny`] with a reason otherwise
     fn check_access(&self, scope: &Caller, action: &Action) -> Decision;
 }
 

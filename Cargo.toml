@@ -3,7 +3,7 @@ name = "onetool"
 version = "0.0.1-alpha.6"
 edition = "2024"
 license = "MIT"
-description = "The last LLM tool you'll every need"
+description = "Sandboxed Lua REPL for LLM tool use"
 
 [dependencies]
 mlua = { version = "0.11.5", features = ["lua54", "vendored", "send"] }

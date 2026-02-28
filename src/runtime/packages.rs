@@ -1,5 +1,17 @@
-//! Utilities for loading external Lua libraries
+//! Lua package path management.
+//!
+//! Provides utilities for extending the Lua `package.path` so that `require()` can
+//! find external modules. Note that `require()` is blocked by the default sandbox
+//! policy — you must use a custom policy (or [`DangerousAllowAllPolicy`](super::sandbox::policy::DangerousAllowAllPolicy))
+//! to allow package loading.
 
+/// Appends additional search patterns to Lua's `package.path`.
+///
+/// Each entry in `extra` should follow Lua's path pattern convention, using `?` as
+/// a placeholder for the module name. For example, `"./lib/?.lua"` allows
+/// `require("foo")` to find `./lib/foo.lua`.
+///
+/// Entries are appended after the existing path, preserving the original search order.
 pub fn extend_path(runtime: &mlua::Lua, extra: &[&str]) -> mlua::Result<()> {
     let package: mlua::Table = runtime.globals().get("package")?;
 
