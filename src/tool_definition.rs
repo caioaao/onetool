@@ -17,7 +17,7 @@ pub const DESCRIPTION: &str = r#"Execute Lua code in a long-lived sandboxed REPL
 - Local variables (`local x = ...`) are lost between calls
 - Custom global variables may be injected by the application (check what's available!)
 
-**Available Operations:**
+**Always Available:**
 - Full string library (string.sub, string.find, string.match, string.gsub, string.gmatch, etc.)
 - Full table library (table.insert, table.concat, table.remove, table.sort, etc.)
 - Full math library (math.min, math.max, math.floor, math.ceil, math.abs, math.sqrt, etc.)
@@ -27,10 +27,21 @@ pub const DESCRIPTION: &str = r#"Execute Lua code in a long-lived sandboxed REPL
 - Time: os.time(), os.date()
 - Docs: `docs` global contains documentation for custom functions
 
-**Restrictions:**
-- No file I/O, network access, or OS commands
-- No require(), load(), loadfile(), or dofile()
-- No metatable manipulation (rawset, setmetatable, etc.)
+**Policy-Controlled (may or may not be available):**
+The following operations are disabled by default but may be enabled by the application's policy. When disabled, they return nil. Probe before using:
+  if io.open then
+    local f = io.open("data.txt", "r")
+    -- use f
+  end
+- File I/O: io.open, io.read, io.write, io.lines, io.close
+- OS operations: os.execute, os.remove, os.rename, os.getenv, os.tmpname
+- Code loading: load(), loadfile(), dofile()
+- Metatable manipulation: rawset, rawget, setmetatable, getmetatable
+
+**Never Available:**
+- debug library
+- coroutine library
+- package/require system
 
 **Pattern Matching:**
 Lua patterns (NOT regex): `.` (any char), `%d` (digit), `%a` (letter), `%s` (space), `+` (1 or more), `*` (0 or more)

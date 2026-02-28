@@ -75,18 +75,19 @@ impl LuaReplServer {
 
     /// Execute Lua code in a long-lived sandboxed REPL environment.
     ///
-    /// **Capabilities:**
+    /// **Always available:**
     /// - Expression evaluation with return values
     /// - print() output capture (appears in tool response)
     /// - Persistent state between executions (variables, functions, tables)
-    /// - Safe operations: string, table, math, utf8, os.time, os.date
+    /// - string, table, math, utf8, os.time, os.date
     /// - Documentation: available via global `docs` variable
     ///
-    /// **Restrictions:**
-    /// - No file I/O or network access
-    /// - No OS command execution
-    /// - No code loading (require, load, loadfile)
-    /// - No dangerous metatable operations
+    /// **Policy-controlled (may or may not be available):**
+    /// - File I/O (io.*), OS commands (os.execute, etc.), code loading (load, loadfile, dofile)
+    /// - Metatable manipulation (rawset, setmetatable, etc.)
+    /// - Disabled by default (return nil); probe with `if io.open then ... end`
+    ///
+    /// **Never available:** debug, coroutine, package/require
     ///
     /// **Environment:**
     /// - Sandboxed Lua 5.4
