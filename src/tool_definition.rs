@@ -11,11 +11,18 @@ pub const DESCRIPTION: &str = r#"Execute Lua code in a long-lived sandboxed REPL
 
 **IMPORTANT:** Provide ONLY valid Lua code as input. Do NOT wrap code in markdown blocks.
 
+**Custom Functions — Check `docs` First:**
+The application may register domain-specific functions (HTTP, database, translation, etc.) that extend this REPL beyond standard Lua. These are documented in the `docs` global table. ALWAYS check it when a task involves capabilities beyond standard Lua:
+  -- List all available custom functions
+  for k, v in pairs(docs) do print(k, v) end
+  -- Check a specific function
+  print(docs["function_name"])
+
 **Environment:**
 - Sandboxed Lua 5.4 with persistent state between calls
 - Global variables (assigned without `local`) persist across calls
 - Local variables (`local x = ...`) are lost between calls
-- Custom global variables may be injected by the application (check what's available!)
+- Custom global variables may be injected by the application
 
 **Always Available:**
 - Full string library (string.sub, string.find, string.match, string.gsub, string.gmatch, etc.)
@@ -25,7 +32,6 @@ pub const DESCRIPTION: &str = r#"Execute Lua code in a long-lived sandboxed REPL
 - Core functions: type(), tonumber(), tostring(), pairs(), ipairs(), select(), assert(), error(), pcall(), xpcall()
 - Output: print() (captured in tool response)
 - Time: os.time(), os.date()
-- Docs: `docs` global contains documentation for custom functions
 
 **Policy-Controlled (may or may not be available):**
 The following operations are disabled by default but may be enabled by the application's policy. When disabled, they return nil. Probe before using:
@@ -43,15 +49,21 @@ The following operations are disabled by default but may be enabled by the appli
 - coroutine library
 - package/require system
 
-**Pattern Matching:**
-Lua patterns (NOT regex): `.` (any char), `%d` (digit), `%a` (letter), `%s` (space), `+` (1 or more), `*` (0 or more)
-Example: string.match(text, "number is (%d+)") -- captures digits after "number is "
+**Pattern Matching (Lua patterns, NOT regex):**
+Lua uses its own pattern syntax. Common regex features that DO NOT work:
+  \d, \w, \s → use %d, %a, %s instead
+  [a-z] → use %l (lowercase) or %a (letter)
+  \b, |, {n} → not available
+Character classes: %d (digit), %a (letter), %l (lower), %u (upper), %s (space), %p (punctuation), %w (alphanumeric), %c (control)
+Quantifiers: + (1+), * (0+), - (0+ lazy), ? (0 or 1)
+Captures: use () — string.match("hello 42", "(%d+)") returns "42"
+Iteration: for word in string.gmatch(text, "%S+") do print(word) end
 
 **Usage:**
 - Use print() to output intermediate values for debugging
 - Use return to provide final results
-- Access any global variables that have been set by the application
-- Leverage Lua for data processing - it's fast and efficient even on large strings
+- Prefer iterative algorithms — naive recursion can be extremely slow for large inputs
+- Search large strings with string.match/string.find — don't print them (output truncation may hide data)
 
 **Example:**
 x = 10
@@ -62,7 +74,6 @@ return x + y
 **Output Truncation:**
 - Output and result are automatically truncated to 50,000 characters by default
 - Truncated values end with "...\n(output truncated)"
-- This prevents extremely large outputs from overwhelming the conversation context
 "#;
 
 /// Parameter name for the source code input.
