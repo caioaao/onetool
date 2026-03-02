@@ -226,7 +226,6 @@ pub const DEFAULT_API_SPEC: ApiSpec = &[
 pub fn apply(lua: &mlua::Lua) -> mlua::Result<()> {
     let policy = Arc::new(policy::DenyAllPolicy);
     apply_with_policy(lua, policy, None)?;
-    register_docs(lua)?;
     Ok(())
 }
 
@@ -297,6 +296,8 @@ pub fn apply_with_policy<P: policy::Policy + 'static>(
     globals.clear()?;
 
     processed.for_each(|k: mlua::Value, v: mlua::Value| globals.set(k, v))?;
+
+    register_docs(lua)?;
 
     Ok(())
 }
