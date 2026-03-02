@@ -136,13 +136,13 @@ cargo run --example lua-repl
 cargo run --example custom-functions
 
 # Interactive notebook demo (requires API key)
-cargo run --features notebook_demo --example notebook-demo # OPENAI_API_KEY
+cargo run --features notebook_demo --example notebook-demo # DEEPSEEK_API_KEY
 
 # LLM framework examples (require API keys where noted)
-cargo run --features genai --example genai-basic        # OPENAI_API_KEY
+cargo run --features genai --example genai-basic        # DEEPSEEK_API_KEY
 cargo run --features mistralrs --example mistralrs-basic # local inference, no key
-cargo run --features rig --example rig-basic             # OPENAI_API_KEY
-cargo run --features aisdk --example aisdk-basic         # OPENAI_API_KEY
+cargo run --features rig --example rig-basic             # DEEPSEEK_API_KEY
+cargo run --features aisdk --example aisdk-basic         # DEEPSEEK_API_KEY
 cargo run --features mcp --example mcp-basic             # MCP stdio server
 ```
 

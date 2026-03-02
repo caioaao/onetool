@@ -8,7 +8,7 @@
 //!
 //! ```bash
 //! # Set your API key
-//! export OPENAI_API_KEY=your_key_here
+//! export DEEPSEEK_API_KEY=your_key_here
 //!
 //! # Run the interactive notebook
 //! cargo run --features notebook_demo --example notebook-demo
@@ -35,7 +35,7 @@ use std::sync::{Arc, Mutex};
 use onetool::runtime::sandbox::policy::{Action, Decision, Policy};
 use tracing_subscriber::EnvFilter;
 
-const MODEL: &str = "gpt-4o-mini";
+const MODEL: &str = "deepseek-chat";
 
 // ============================================================================
 // Interactive Permission Policy
@@ -111,11 +111,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // Validate API key is set
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        eprintln!("Error: OPENAI_API_KEY environment variable is not set.");
+    if std::env::var("DEEPSEEK_API_KEY").is_err() {
+        eprintln!("Error: DEEPSEEK_API_KEY environment variable is not set.");
         eprintln!("Please set it before running this example:");
-        eprintln!("  export OPENAI_API_KEY=your_key_here");
-        return Err("Missing OPENAI_API_KEY".into());
+        eprintln!("  export DEEPSEEK_API_KEY=your_key_here");
+        return Err("Missing DEEPSEEK_API_KEY".into());
     }
 
     // Check if we're in a TTY (terminal) for color support

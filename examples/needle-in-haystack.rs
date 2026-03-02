@@ -10,7 +10,7 @@
 
 use tracing_subscriber::EnvFilter;
 
-const MODEL: &str = "gpt-4o-mini";
+const MODEL: &str = "deepseek-chat";
 const MAGIC_NUMBER: u32 = 31597;
 const NUM_LINES: usize = 1_000_000;
 

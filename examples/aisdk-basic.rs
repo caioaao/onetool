@@ -6,7 +6,7 @@
 //! Run with: cargo run --features aisdk --example aisdk-basic
 
 use aisdk::core::LanguageModelRequest;
-use aisdk::providers::OpenAI;
+use aisdk::providers::deepseek::Deepseek;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("--- Creating aisdk agent with Lua REPL tool");
 
     let result = LanguageModelRequest::builder()
-        .model(OpenAI::gpt_4o())
+        .model(Deepseek::deepseek_chat())
         .system(
             "You are a helpful assistant that can execute Lua code to solve problems. \
                  Use the lua_repl tool to run calculations and verify your answers.",

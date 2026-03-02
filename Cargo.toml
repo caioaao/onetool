@@ -16,7 +16,7 @@ serde_json = { version = "1.0.149", optional = true }
 genai = { version = "0.5.3", optional = true }
 mistralrs = { version = "0.7", optional = true }
 rig-core = { version = "0.31", optional = true }
-aisdk = { version = "0.5", optional = true, features = ["openai"] }
+aisdk = { version = "0.5", optional = true, features = ["deepseek"] }
 schemars = { version = "1.2", optional = true }
 rmcp = { version = "0.16.0", features = ["server", "transport-io", "macros"], optional = true }
 tokio = { version = "1", features = ["rt", "sync", "macros"], optional = true }
@@ -30,7 +30,7 @@ serde_json = "1.0.149"
 mistralrs = "0.7"
 anyhow = "1.0"
 rig-core = "0.31"
-aisdk = "0.5"
+aisdk = { version = "0.5", features = ["deepseek"] }
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
 regex = "1.0"

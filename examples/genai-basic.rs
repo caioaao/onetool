@@ -1,6 +1,6 @@
 use tracing_subscriber::EnvFilter;
 
-const MODEL: &str = "gpt-4o-mini"; // or "gemini-2.0-flash" or other model supporting tool calls
+const MODEL: &str = "deepseek-chat"; // or other model supporting tool calls
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

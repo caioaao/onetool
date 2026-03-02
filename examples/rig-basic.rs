@@ -7,7 +7,7 @@
 
 use rig::client::{CompletionClient, ProviderClient};
 use rig::completion::Prompt;
-use rig::providers::openai;
+use rig::providers::deepseek;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -19,9 +19,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repl = onetool::Repl::new().map_err(|e| e.to_string())?;
     let lua_tool = onetool::rig::LuaRepl::new(repl);
 
-    let client = openai::Client::from_env();
+    let client = deepseek::Client::from_env();
     let agent = client
-        .agent(openai::GPT_4O)
+        .agent(deepseek::DEEPSEEK_CHAT)
         .preamble(
             "You are a helpful assistant that can execute Lua code to solve problems. \
              Use the lua_repl tool to run calculations and verify your answers.",

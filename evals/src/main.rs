@@ -17,7 +17,7 @@ use std::time::Duration;
 )]
 struct Cli {
     /// Model(s) to evaluate (can be specified multiple times)
-    #[arg(long, default_value = "gpt-4o-mini")]
+    #[arg(long, default_value = "deepseek-chat")]
     model: Vec<String>,
 
     /// Only run scenarios matching these tags (comma-separated or repeated)
