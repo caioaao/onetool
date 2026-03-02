@@ -1,5 +1,6 @@
-use crate::runtime::{self, output, sandbox};
+use crate::runtime::{self, output, sandbox, timeout};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Errors that can occur during REPL operations.
 #[derive(Debug)]
@@ -61,6 +62,7 @@ impl From<mlua::Error> for ReplError {
 /// ```
 pub struct Repl {
     runtime: Mutex<mlua::Lua>,
+    timeout: Mutex<Option<Duration>>,
 }
 
 /// Result of evaluating Lua code.
@@ -141,8 +143,9 @@ impl Repl {
     /// 4. Create REPL
     pub fn new_with(runtime: mlua::Lua) -> Result<Self, mlua::Error> {
         let runtime = Mutex::new(runtime);
+        let timeout = Mutex::new(None);
 
-        Ok(Self { runtime })
+        Ok(Self { runtime, timeout })
     }
 
     /// Creates a sandboxed REPL with a custom access control policy.
@@ -240,10 +243,42 @@ impl Repl {
         Self::new_with(runtime)
     }
 
+    /// Sets or clears the execution timeout for `eval()`.
+    ///
+    /// When set, code that runs longer than the given duration will be terminated
+    /// with a `RuntimeError` in the [`EvalOutcome`]. Pass `None` to disable the timeout.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use onetool::Repl;
+    /// use std::time::Duration;
+    ///
+    /// # fn example() -> Result<(), mlua::Error> {
+    /// let repl = Repl::new()?;
+    /// repl.set_timeout(Some(Duration::from_millis(100)));
+    ///
+    /// let outcome = repl.eval("while true do end")?;
+    /// assert!(outcome.result.is_err());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_timeout(&self, timeout: Option<Duration>) {
+        *self.timeout.lock().unwrap() = timeout;
+    }
+
+    /// Returns the current execution timeout, or `None` if no timeout is set.
+    pub fn timeout(&self) -> Option<Duration> {
+        *self.timeout.lock().unwrap()
+    }
+
     /// Evaluates Lua code and captures output.
     ///
     /// Returns both the expression return values and any output from `print()` calls.
     /// State persists between calls, so variables and functions remain available.
+    ///
+    /// If a timeout is configured via [`set_timeout`](Repl::set_timeout), execution
+    /// that exceeds the limit will be terminated with a `RuntimeError`.
     ///
     /// # Example
     ///
@@ -264,11 +299,16 @@ impl Repl {
     /// # }
     /// ```
     pub fn eval(&self, code: &str) -> Result<EvalOutcome, mlua::Error> {
+        let timeout_duration = { *self.timeout.lock().unwrap() };
         let runtime = self.runtime.lock().unwrap();
 
-        let (eval_result, output) = output::with_output_capture(&runtime, |runtime| {
-            runtime.load(code).eval::<mlua::MultiValue>()
-        })?;
+        let (eval_result, output) = if let Some(duration) = timeout_duration {
+            timeout::with_timeout(&runtime, duration, |rt| {
+                output::with_output_capture(rt, |rt| rt.load(code).eval::<mlua::MultiValue>())
+            })?
+        } else {
+            output::with_output_capture(&runtime, |rt| rt.load(code).eval::<mlua::MultiValue>())?
+        };
 
         let result = match eval_result {
             Ok(values) => Ok(values
@@ -988,5 +1028,70 @@ mod tests {
             .unwrap();
 
         assert_eq!(value, 99);
+    }
+
+    // === H. Timeout Tests ===
+
+    #[test]
+    fn test_timeout_infinite_loop() {
+        let repl = create_repl();
+        repl.set_timeout(Some(Duration::from_millis(100)));
+
+        let outcome = repl.eval("while true do end").unwrap();
+
+        assert!(outcome.result.is_err());
+    }
+
+    #[test]
+    fn test_timeout_preserves_output() {
+        let repl = create_repl();
+        repl.set_timeout(Some(Duration::from_millis(100)));
+
+        let outcome = repl
+            .eval(
+                r#"
+            print("before timeout")
+            while true do end
+        "#,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.output, vec!["before timeout\n"]);
+    }
+
+    #[test]
+    fn test_timeout_normal_eval_finishes() {
+        let repl = create_repl();
+        repl.set_timeout(Some(Duration::from_secs(5)));
+
+        let outcome = repl.eval("return 1 + 1").unwrap();
+
+        assert!(outcome.result.is_ok());
+        assert_eq!(outcome.result.unwrap()[0], "2");
+    }
+
+    #[test]
+    fn test_no_timeout_by_default() {
+        let repl = create_repl();
+
+        assert!(repl.timeout().is_none());
+
+        let outcome = repl.eval("return 42").unwrap();
+
+        assert!(outcome.result.is_ok());
+        assert_eq!(outcome.result.unwrap()[0], "42");
+    }
+
+    #[test]
+    fn test_set_timeout_round_trip() {
+        let repl = create_repl();
+
+        assert_eq!(repl.timeout(), None);
+
+        repl.set_timeout(Some(Duration::from_millis(500)));
+        assert_eq!(repl.timeout(), Some(Duration::from_millis(500)));
+
+        repl.set_timeout(None);
+        assert_eq!(repl.timeout(), None);
     }
 }

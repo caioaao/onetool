@@ -9,6 +9,7 @@ pub mod docs;
 pub mod output;
 pub mod packages;
 pub mod sandbox;
+pub mod timeout;
 
 /// Creates a sandboxed Lua runtime.
 ///
