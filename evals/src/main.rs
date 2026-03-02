@@ -8,6 +8,7 @@ use onetool::genai::LuaRepl;
 use onetool::runtime::sandbox::policy::DenyAllPolicy;
 use serde::Serialize;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(
@@ -163,6 +164,7 @@ async fn run_eval(
 
         // Create a fresh REPL for each scenario
         let repl = Repl::new_with_policy(Arc::new(DenyAllPolicy))?;
+        repl.set_timeout(Some(Duration::from_millis(100)));
         scenario.setup(&repl)?;
 
         let lua_repl = LuaRepl::new(&repl);
